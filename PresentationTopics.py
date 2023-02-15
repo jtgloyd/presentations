@@ -5,6 +5,114 @@ import types
 import re
 
 
+# TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single 
+#  slide into one single video, then putting that video into power point as a single playthrough (or something to that 
+#  effect).  Alternatively, it might be better to change the self.wait command to not affect the videos, but instead 
+#  either pause playback (preferred if possible) or split the videos and add a pause to the slide via animations.
+
+# TODO: add a slide.setup method decorator function (similar to property.deleter) that is automatically called by the
+#  Topic.setup method
+
+# TODO: add documentation to Topic object that automatically prints either instructions for operation, OR points to
+#  the manim instructions for operation, e.g. manim -qm -p Presentation.py T01_...
+#  MAYBE add these instructions as a comment in the live templates.
+
+# URGENT: There is an issue with the identification code for finding notes when the notes string is dynamic, e.g.
+#  f"""Notes string {var}..."""
+
+# TODO: try using call to __set_name__ to get owner for Slide class, that way we can reference the owner Topic instance
+#  when raising errors and warnings.
+
+
+LiveTemplateInstructionsForSlide = r'''
+In order to get a live template for pycharm, go 
+to File -> Settings -> Editor -> Live Templates 
+and add a new template called "slide" with the 
+following code:
+
+@Slide
+def $NAME$(self):
+    # Animations and body go here
+    
+    self.wait(0.2)
+    self.endSlide(notes="""\
+""")
+    # Actions and cleanup that don't depend 
+    # on items for the next slide go here
+    pass
+
+Then change the "Applicable in" context to 
+Python: class
+'''
+
+LiveTemplateInstructionsForTopic = r'''
+In order to get a live template for pycharm, go 
+to File -> Settings -> Editor -> Live Templates 
+and add a new template called "topic" with the 
+following code:
+
+class T$N2$_$CLASS_NAME$(Topic):
+    _build_command_ = "manim -qm -p $FILE_NAME$ T$N2$_$CLASS_NAME$"
+
+    # noinspection PyAttributeOutsideInit
+    def setup(self):
+        # Title (replace if necessary)
+        self.title0 = Tex(r"\underline{$NAME$}", font_size=72)
+        self.title1 = self.title0.copy()
+        self.title1.font_size = 24
+        self.title1.move_to(3.8 * UP + 6.9 * LEFT, aligned_edge=UL)
+
+        # Other setup goes below
+        $END$
+        pass
+
+    @Slide
+    def Title(self):
+        self.play(Write(self.title0, run_time=2))
+        self.wait(0.5)
+        self.play(Indicate(self.title0))
+        self.play(TransformMatchingTex(self.title0, self.title1))
+        self.wait(0.2)
+        self.endSlide(notes="""\
+
+""")
+        pass
+        
+    @Slide
+    def $SLIDE1$(self):
+        # Animations and body go here
+        
+        self.wait(0.2)
+        self.endSlide(notes="""\
+
+""")
+        # Actions and cleanup that don't depend 
+        # on items for the next slide goes here
+        pass
+
+    @Slide
+    def Cleanup(self):
+        self.play(FadeOut(self.title1, ...))
+        # Put all persistent components in this ^ FadeOut function 
+        #  to clean them all up when the topic is finished.
+        self.wait(0.2)
+        self.endSlide(autonext=True)
+        pass
+
+    pass
+
+Then click "Edit Variables" and give a default 
+value of ["00"] to N2, ["TITLE"] to NAME, and 
+["SLIDE_NAME"] to SLIDE1. Next, give CLASS_NAME
+an expression of [capitalize(camelCase(NAME))]
+and FILE_NAME an expression of [fileName()] and
+turn on "Skip if defined" for CLASS_NAME and 
+FILE_NAME. 
+Then change the "Applicable in" context to 
+Python: Top-level
+'''
+
+
 class Topic(PPTXScene):
     """All slides should be divided, in order, into methods that implement the @Slide decorator class.
     Each slide must end with a self.endSlide(...) command.
@@ -15,14 +123,36 @@ class Topic(PPTXScene):
     This is also extensible to other formats of slide show creation using Manim if/when we want to switch over to
     something that doesn't use power point since we've been having so many issues with it (or, when we get overly
     ambitious and want to make our own version *sigh*)"""
+    
+    _wait_override_ = None
 
     def construct(self):
+        # self.componentSetup()
         slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
         for slide in slides:
             # print(slide.name)
             slide(self)
-            # possibly remove excess mobjects here
             pass
+        pass
+    
+    def wait(self, *args, **kwargs):
+        if self._wait_override_ is not None:
+            if "duration" not in kwargs and args:
+                args = args[1:]
+            kwargs["duration"] = self._wait_override_
+        return super(Topic, self).wait(*args, **kwargs)
+
+    # def componentSetup(self):
+    #     componentBuilders = filter(Components.__instancecheck__, map(self.__getattribute__, self.__dir__()))
+    #     for componentBuilder in componentBuilders:
+    #         componentBuilder(self)
+    #         pass
+    #     pass
+
+    def __init_subclass__(cls, **kwargs):
+        # TODO: this can be used to automate the "Title" slide as well as other slides we might want to make consistent.
+        # print(cls.__dict__)
+        super(Topic, cls).__init_subclass__()
         pass
 
     pass
@@ -41,10 +171,17 @@ class Topic(PPTXScene):
 
 
 class Slide:
+    # TODO: figure out how to make name repetition warn the user
+    #  (like what happens with re-defined functions within a class)
     name: str
     constructFunction: types.FunctionType
     notes: typing.Optional[str]
     code: types.CodeType
+
+    # # TODO: use this to allow for naming and other arguments to the decorator
+    # def __new__(cls, *args, **kwargs):
+    #     self = object.__new__(cls)
+    #     return self
 
     def __init__(self, constructFunction: types.FunctionType):
         self.constructFunction = constructFunction
@@ -103,7 +240,18 @@ class Slide:
                 endSlideCode = self.code.co_code[codeStartIndex + len(kwEndSlideStart):codeEndIndex]
                 nInputs = endSlideCode[-1]
 
-                valueIndices = list(map(ord, endSlideCode[:endSlideCode.index(b'\x8d')].split(b'd')[1:]))
+                try:
+                    # print(self.name)
+                    # print(endSlideCode[:endSlideCode.index(b'\x8d')].split(b'd')[1:])
+                    valueIndices = list(map(ord, endSlideCode[:endSlideCode.index(b'\x8d')].split(b'd')[1:]))
+                except TypeError:
+                    warnings.warn(
+                        SyntaxWarning(f"\nSyntaxWarning: Issue with obtaining notes (likely due to use of dynamic notes"
+                                      f"\nstring, i.e. f'...') for slide decorated function:"
+                                      f"\n\t{self.name}"))
+                    self.notes = NotImplemented
+                    return None
+
                 values = [self.code.co_consts[i] for i in valueIndices[:-1]]
                 prescribedKeywords = self.code.co_consts[valueIndices[-1]]
                 keywords = (Topic.endSlide.__code__.co_varnames[1:nInputs - len(prescribedKeywords) + 1] +
