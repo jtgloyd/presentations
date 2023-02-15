@@ -142,25 +142,33 @@ class Topic(PPTXScene):
             kwargs["duration"] = self._wait_override_
         return super(Topic, self).wait(*args, **kwargs)
 
-    # def componentSetup(self):
-    #     componentBuilders = filter(Components.__instancecheck__, map(self.__getattribute__, self.__dir__()))
-    #     for componentBuilder in componentBuilders:
-    #         componentBuilder(self)
-    #         pass
-    #     pass
-
     def __init_subclass__(cls, **kwargs):
-        # TODO: this can be used to automate the "Title" slide as well as other slides we might want to make consistent.
+        # TODO: this can be used to automate the "Title" slide as well as other slides we might want to make consistent
         # print(cls.__dict__)
         super(Topic, cls).__init_subclass__()
         pass
 
+    def slideSetup(self):
+        slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
+        for slide in slides:
+            slide.setupProtocol(self)
+            pass
+        pass
+
+    def render(self, *args, **kwargs):
+        # TODO: figure out how to make it so that self.setup() is run before self.slideSetup() but NOT run twice
+        self.slideSetup()
+        return super(Topic, self).render(*args, **kwargs)
+
     pass
 
 
+# TODO: make a Slide.setup or Slide.components similar to how property does with setters
 # class Components:
 #
-#     def __init__(self, function):
+#     setupFunction: types.FunctionType
+#
+#     def __init__(self, setupFunction: types.FunctionType):
 #         self.function = function
 #         pass
 #
@@ -175,16 +183,16 @@ class Slide:
     #  (like what happens with re-defined functions within a class)
     name: str
     constructFunction: types.FunctionType
+    setupFunction: typing.Optional[types.FunctionType]
     notes: typing.Optional[str]
     code: types.CodeType
 
-    # # TODO: use this to allow for naming and other arguments to the decorator
-    # def __new__(cls, *args, **kwargs):
-    #     self = object.__new__(cls)
-    #     return self
+    # TODO: figure out how to enforce functions decorated with @NAME.setup to have signature of (self, owner)
 
     def __init__(self, constructFunction: types.FunctionType):
         self.constructFunction = constructFunction
+        self.__on__ = True
+        self.setupFunction = None
         # self.code = self.constructFunction.__code__
         # self.name = self.constructFunction.__name__
         self.__setup__()
@@ -289,7 +297,25 @@ class Slide:
         pass
 
     def __call__(self, owner, *args, **kwargs):
-        return self.constructFunction(owner, *args, **kwargs)
+        if self.__on__:
+            return self.constructFunction(owner, *args, **kwargs)
+        # TODO: log slide being off
+        pass
+
+    def off(self, off=True):
+        self.__on__ = not off
+        pass
+
+    def setup(self, setupFunction: types.FunctionType):
+        """ Descriptor to change the setup function for the slide. """
+        self.setupFunction = setupFunction
+        pass
+
+    def setupProtocol(self, owner, *args, **kwargs):
+        if self.setupFunction is not None:
+            return self.setupFunction(owner, self, *args, **kwargs)
+        # TODO: log no setup
+        pass
 
     pass
 
@@ -473,5 +499,24 @@ if __name__ == '__main__1':
     pass
 pass
 if __name__ == '__main__':
-    """Testing of ..."""
+    """Testing of __new__ vs __init__ args and order"""
+
+    class testClass:
+
+        def __new__(cls, *args, **kwargs):
+            print("In new")
+            print(args)
+            print(kwargs)
+            self = object.__new__(cls)
+            return self
+
+        def __init__(self, *args, **kwargs):
+            print("In init")
+            print(args)
+            print(kwargs)
+            pass
+
+        pass
+
+    t = testClass('a', 'b', 3, x=2, y=int)
     pass
