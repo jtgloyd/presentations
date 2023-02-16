@@ -10,9 +10,6 @@ import re
 #  effect).  Alternatively, it might be better to change the self.wait command to not affect the videos, but instead 
 #  either pause playback (preferred if possible) or split the videos and add a pause to the slide via animations.
 
-# TODO: add a slide.setup method decorator function (similar to property.deleter) that is automatically called by the
-#  Topic.setup method
-
 # TODO: add documentation to Topic object that automatically prints either instructions for operation, OR points to
 #  the manim instructions for operation, e.g. manim -qm -p Presentation.py T01_...
 #  MAYBE add these instructions as a comment in the live templates.
@@ -22,6 +19,11 @@ import re
 
 # TODO: try using call to __set_name__ to get owner for Slide class, that way we can reference the owner Topic instance
 #  when raising errors and warnings.
+
+# TODO (2023-02-16 @ 08:31:10): implement logging, including logging within the construct, slideSetup, and (to be)
+#  overridden render methods to show when the setup, slideSetup, and construct methods start
+
+# TODO (2023-02-16 @ 08:37:11): Add documentation to Slide class and improve documentation for Topic
 
 
 LiveTemplateInstructionsForSlide = r'''
@@ -117,8 +119,8 @@ class Topic(PPTXScene):
     """All slides should be divided, in order, into methods that implement the @Slide decorator class.
     Each slide must end with a self.endSlide(...) command.
     Each slide must have a unique name, and names should be relevant to the content covered.
-    Components for use in the slides should be defined in a 'setup' function.
-        (OR possible decorated with an @Components class if I decide this is better later)
+    Components for use in the slides should be defined in a 'setup' function OR on a per-slide basis using the
+        @<slide>.setup decorator
 
     This is also extensible to other formats of slide show creation using Manim if/when we want to switch over to
     something that doesn't use power point since we've been having so many issues with it (or, when we get overly
@@ -126,8 +128,9 @@ class Topic(PPTXScene):
     
     _wait_override_ = None
 
+    @typing.final
     def construct(self):
-        # self.componentSetup()
+        self.slideSetup()
         slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
         for slide in slides:
             # print(slide.name)
@@ -155,27 +158,13 @@ class Topic(PPTXScene):
             pass
         pass
 
-    def render(self, *args, **kwargs):
-        # TODO: figure out how to make it so that self.setup() is run before self.slideSetup() but NOT run twice
-        self.slideSetup()
-        return super(Topic, self).render(*args, **kwargs)
+    # def render(self, *args, **kwargs):
+    #     # TODO: figure out how to make it so that self.setup() is run before self.slideSetup() but NOT run twice
+    #     # ^ this is done by putting the call to slideSetup in the "construct" method and removing this override
+    #     self.slideSetup()
+    #     return super(Topic, self).render(*args, **kwargs)
 
     pass
-
-
-# TODO: make a Slide.setup or Slide.components similar to how property does with setters
-# class Components:
-#
-#     setupFunction: types.FunctionType
-#
-#     def __init__(self, setupFunction: types.FunctionType):
-#         self.function = function
-#         pass
-#
-#     def __call__(self, *args, **kwargs):
-#         return self.function(*args, **kwargs)
-#
-#     pass
 
 
 class Slide:
@@ -188,11 +177,12 @@ class Slide:
     code: types.CodeType
 
     # TODO: figure out how to enforce functions decorated with @NAME.setup to have signature of (self, owner)
+    #  -> I think this is going to be done in the inspections or inspections settings
 
-    def __init__(self, constructFunction: types.FunctionType):
+    def __init__(self, constructFunction: types.FunctionType, setupFunction: types.FunctionType = None):
         self.constructFunction = constructFunction
         self.__on__ = True
-        self.setupFunction = None
+        self.setupFunction = setupFunction
         # self.code = self.constructFunction.__code__
         # self.name = self.constructFunction.__name__
         self.__setup__()
@@ -300,6 +290,7 @@ class Slide:
         if self.__on__:
             return self.constructFunction(owner, *args, **kwargs)
         # TODO: log slide being off
+        print(f'Slide "{self.name}" skipped.')
         pass
 
     def off(self, off=True):
@@ -309,12 +300,17 @@ class Slide:
     def setup(self, setupFunction: types.FunctionType):
         """ Descriptor to change the setup function for the slide. """
         self.setupFunction = setupFunction
-        pass
+        return self
 
     def setupProtocol(self, owner, *args, **kwargs):
         if self.setupFunction is not None:
             return self.setupFunction(owner, self, *args, **kwargs)
-        # TODO: log no setup
+        # TODO: log "no setup"
+        print(f'Slide "{self.name}" has no setup function.')
+        pass
+
+    def __set_name__(self, owner, name):
+        print(owner, name)
         pass
 
     pass
