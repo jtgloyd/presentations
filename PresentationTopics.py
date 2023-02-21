@@ -3,6 +3,10 @@ import warnings
 import typing
 import types
 import re
+try:
+    from .PresentationLogger import logger, PRESENTATION_INFO
+except ImportError:
+    from PresentationLogger import logger, PRESENTATION_INFO
 
 
 # TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single 
@@ -17,11 +21,8 @@ import re
 # URGENT: There is an issue with the identification code for finding notes when the notes string is dynamic, e.g.
 #  f"""Notes string {var}..."""
 
-# TODO: try using call to __set_name__ to get owner for Slide class, that way we can reference the owner Topic instance
+# TODO: try using call to __set_name__ to get owner for Slide class, that way we can reference the owner Topic subclass
 #  when raising errors and warnings.
-
-# TODO (2023-02-16 @ 08:31:10): implement logging, including logging within the construct, slideSetup, and (to be)
-#  overridden render methods to show when the setup, slideSetup, and construct methods start
 
 # TODO (2023-02-16 @ 08:37:11): Add documentation to Slide class and improve documentation for Topic
 
@@ -135,18 +136,16 @@ class Topic(PPTXScene):
         # TODO (2023-02-21 @ 13:02:55): remove this check when satisfied they always agree
         assert list(self.__get_instance_slides__()) == list(self.__get_slides__())
 
-        self.slideSetup()
-        slides = self.__get_slides__()
-        for slide in slides:
-            # print(slide.name)
-            slide(self)
-            pass
-        # print(list(self.__get_slides__()))
+        logger.log(PRESENTATION_INFO, f'Constructing {self.__class__.__name__}.')
+        slides = list(self.__get_slides__())
+        self.slideSetup(slides=slides)
+        self.slideConstruct(slides=slides)
         pass
 
     @typing.final
     def __construct_all__(self):
-        # print(f'Called __construct_all__ from {self}')
+        logger.log(PRESENTATION_INFO, f'Called "__construct_all__" from {self}')
+
         # TODO (2023-02-21 @ 12:29:36): Add documentation for this and with naming a subclass "All"
         if len(self.__class__.__bases__) != 1:
             non_unique_base = SyntaxError(
@@ -161,24 +160,16 @@ class Topic(PPTXScene):
         topics = [topic for topic in parent_class.__subclasses__()
                   if not isinstance(self, topic)]  # exclude own class to avoid causing loop
         for topic in topics:
-            # print(f'Creating {topic.__name__} from {self}')
+            logger.log(PRESENTATION_INFO, f'Creating {topic.__name__} from {self}')
             # Run global setup from topic
             topic.setup(self)
+            # Get slides from topic
+            slides = list(topic.__get_slides__())
             # Run slide setup from topic
-            topic.slideSetup(self, slides=topic.__get_slides__())
+            topic.slideSetup(self, slides=slides)
             # Construct each slide for topic
-            for slide in topic.__get_slides__():
-                slide(self)
-                pass
+            topic.slideConstruct(self, slides=slides)
             pass
-
-        # TODO (2023-02-21 @ 12:50:45): Remove this:
-        # self.slideSetup()
-        # slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
-        # for slide in slides:
-        #     # print(slide.name)
-        #     slide(self)
-        #     pass
         pass
 
     # TODO (2023-02-21 @ 13:02:55): remove this when accompanying check is removed
@@ -223,19 +214,19 @@ class Topic(PPTXScene):
             pass
         pass
 
+    def slideConstruct(self, **kwargs):
+        slides = kwargs.get('slides', self.__get_slides__())
+        for slide in slides:
+            slide(self)
+            pass
+        pass
+
     def slideSetup(self, **kwargs):
         slides = kwargs.get('slides', self.__get_slides__())
         for slide in slides:
             slide.setupProtocol(self)
             pass
         pass
-
-    # TODO (2023-02-21 @ 12:56:42): remove this:
-    # def render(self, *args, **kwargs):
-    #     # TODO: figure out how to make it so that self.setup() is run before self.slideSetup() but NOT run twice
-    #     #  ^ this is done by putting the call to slideSetup in the "construct" method and removing this override
-    #     self.slideSetup()
-    #     return super(Topic, self).render(*args, **kwargs)
 
     pass
 
@@ -365,11 +356,11 @@ class Slide:
         pass
 
     def __call__(self, owner, *args, **kwargs):
-        print(f'Called {self.name}')
+        logger.log(PRESENTATION_INFO, f'Called slide "{self.name}"')
         if self.__on__:
             return self.constructFunction(owner, *args, **kwargs)
-        # TODO: log slide being off
-        # print(f'Slide "{self.name}" skipped.')
+        # log slide being off
+        logger.log(PRESENTATION_INFO, f'Slide "{self.name}" skipped because it was turned off.')
         pass
 
     def off(self, off=True):
@@ -381,11 +372,22 @@ class Slide:
         self.setupFunction = setupFunction
         return self
 
+    def constructProtocol(self, owner, *args, **kwargs):
+        if self.__on__:
+            logger.log(PRESENTATION_INFO, f'Constructing slide "{self.name}".')
+            return self.constructFunction(owner, *args, **kwargs)
+        else:
+            # log slide being off
+            logger.log(PRESENTATION_INFO, f'Construction of slide "{self.name}" skipped because it is turned off.')
+        pass
+
     def setupProtocol(self, owner, *args, **kwargs):
         if self.setupFunction is not None:
+            logger.log(PRESENTATION_INFO, f'Executing slide "{self.name}" setup.')
             return self.setupFunction(owner, self, *args, **kwargs)
-        # TODO: log "no setup"
-        # print(f'Slide "{self.name}" has no setup function.')
+        else:
+            # log "no setup"
+            logger.log(PRESENTATION_INFO, f'Setup for slide "{self.name}" skipped because it has no setup function.')
         pass
 
     # def __set_name__(self, owner, name):
