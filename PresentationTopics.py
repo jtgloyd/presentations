@@ -25,6 +25,8 @@ import re
 
 # TODO (2023-02-16 @ 08:37:11): Add documentation to Slide class and improve documentation for Topic
 
+# TODO (2023-02-21 @ 13:29:30): Make custom exceptions (and possibly warnings) instead of using the builtin ones
+
 
 LiveTemplateInstructionsForSlide = r'''
 In order to get a live template for pycharm, go 
@@ -130,13 +132,62 @@ class Topic(PPTXScene):
 
     @typing.final
     def construct(self):
+        # TODO (2023-02-21 @ 13:02:55): remove this check when satisfied they always agree
+        assert list(self.__get_instance_slides__()) == list(self.__get_slides__())
+
         self.slideSetup()
-        slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
+        slides = self.__get_slides__()
         for slide in slides:
             # print(slide.name)
             slide(self)
             pass
+        # print(list(self.__get_slides__()))
         pass
+
+    @typing.final
+    def __construct_all__(self):
+        # print(f'Called __construct_all__ from {self}')
+        # TODO (2023-02-21 @ 12:29:36): Add documentation for this and with naming a subclass "All"
+        if len(self.__class__.__bases__) != 1:
+            non_unique_base = SyntaxError(
+                f'"__construct_all__" method was called by class without a unique base.\n'
+                f'\t\tclass: {self.__class__}\n'
+                f'\t\tbases: {self.__class__.__bases__}'
+            )
+            raise non_unique_base
+        parent_class = self.__class__.__bases__[0]
+        assert issubclass(parent_class, Topic), f'Classes subclassing Topic with name "All" must subclass Topic.'
+
+        topics = [topic for topic in parent_class.__subclasses__()
+                  if not isinstance(self, topic)]  # exclude own class to avoid causing loop
+        for topic in topics:
+            # print(f'Creating {topic.__name__} from {self}')
+            # Run global setup from topic
+            topic.setup(self)
+            # Run slide setup from topic
+            topic.slideSetup(self, slides=topic.__get_slides__())
+            # Construct each slide for topic
+            for slide in topic.__get_slides__():
+                slide(self)
+                pass
+            pass
+
+        # TODO (2023-02-21 @ 12:50:45): Remove this:
+        # self.slideSetup()
+        # slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
+        # for slide in slides:
+        #     # print(slide.name)
+        #     slide(self)
+        #     pass
+        pass
+
+    # TODO (2023-02-21 @ 13:02:55): remove this when accompanying check is removed
+    def __get_instance_slides__(self):
+        return filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
+
+    @classmethod
+    def __get_slides__(cls):
+        return filter(Slide.__instancecheck__, cls.__dict__.values())
     
     def wait(self, *args, **kwargs):
         if self._wait_override_ is not None:
@@ -146,21 +197,43 @@ class Topic(PPTXScene):
         return super(Topic, self).wait(*args, **kwargs)
 
     def __init_subclass__(cls, **kwargs):
-        # TODO: this can be used to automate the "Title" slide as well as other slides we might want to make consistent
         # print(cls.__dict__)
         super(Topic, cls).__init_subclass__()
+
+        # If subclass is named "All" then it is considered special and it's "construct" method is replaced with the
+        # "__construct_all__" method.  Furthermore, it may not have any Slide decorated methods itself, and its "setup"
+        # method should be identical to the "Topic.setup" method, since these aren't be used by the "__construct_all__"
+        # method.
+        if cls.__name__ == "All":
+            if list(cls.__get_slides__()):
+                # TODO (2023-02-21 @ 13:13:08): Move this into the Slide class so the error is raised by that line
+                #  instead of the "class All(Topic):" line
+                slides_in_All = SyntaxError(
+                    f'"Slide" decorated methods are not allowed in the special case of subclasses to "Topic"\n'
+                    f'\twith the class name "All".'
+                )
+                raise slides_in_All
+            if cls.setup != Topic.setup:
+                setup_in_All = SyntaxError(
+                    f'"setup" methods are unreachable, and therefore not allowed, in the special case of\n'
+                    f'\tsubclasses to "Topic" with the class name "All".'
+                )
+                raise setup_in_All
+            cls.construct = cls.__construct_all__
+            pass
         pass
 
-    def slideSetup(self):
-        slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
+    def slideSetup(self, **kwargs):
+        slides = kwargs.get('slides', self.__get_slides__())
         for slide in slides:
             slide.setupProtocol(self)
             pass
         pass
 
+    # TODO (2023-02-21 @ 12:56:42): remove this:
     # def render(self, *args, **kwargs):
     #     # TODO: figure out how to make it so that self.setup() is run before self.slideSetup() but NOT run twice
-    #     # ^ this is done by putting the call to slideSetup in the "construct" method and removing this override
+    #     #  ^ this is done by putting the call to slideSetup in the "construct" method and removing this override
     #     self.slideSetup()
     #     return super(Topic, self).render(*args, **kwargs)
 
@@ -243,10 +316,12 @@ class Slide:
                     # print(endSlideCode[:endSlideCode.index(b'\x8d')].split(b'd')[1:])
                     valueIndices = list(map(ord, endSlideCode[:endSlideCode.index(b'\x8d')].split(b'd')[1:]))
                 except TypeError:
-                    warnings.warn(
-                        SyntaxWarning(f"\nSyntaxWarning: Issue with obtaining notes (likely due to use of dynamic notes"
-                                      f"\nstring, i.e. f'...') for slide decorated function:"
-                                      f"\n\t{self.name}"))
+                    note_issue = SyntaxWarning(
+                        f"\nSyntaxWarning: Issue with obtaining notes (likely due to use of dynamic notes"
+                        f"\nstring, i.e. f'...') for slide decorated function:"
+                        f"\n\t{self.name}"
+                    )
+                    warnings.warn(note_issue)
                     self.notes = NotImplemented
                     return None
 
@@ -282,15 +357,19 @@ class Slide:
                 self.notes = None
         else:
             # TODO: force use of endSlide OR implement endSlide within __call__
-            warnings.warn(SyntaxWarning(f"\nSyntaxWarning: No call to 'self.endSlide' within Slide decorated function:"
-                                        f"\n\t{self.name}"))
+            no_end_slide = SyntaxWarning(
+                f"\nSyntaxWarning: No call to 'self.endSlide' within Slide decorated function:"
+                f"\n\t{self.name}"
+            )
+            warnings.warn(no_end_slide)
         pass
 
     def __call__(self, owner, *args, **kwargs):
+        print(f'Called {self.name}')
         if self.__on__:
             return self.constructFunction(owner, *args, **kwargs)
         # TODO: log slide being off
-        print(f'Slide "{self.name}" skipped.')
+        # print(f'Slide "{self.name}" skipped.')
         pass
 
     def off(self, off=True):
@@ -306,12 +385,12 @@ class Slide:
         if self.setupFunction is not None:
             return self.setupFunction(owner, self, *args, **kwargs)
         # TODO: log "no setup"
-        print(f'Slide "{self.name}" has no setup function.')
+        # print(f'Slide "{self.name}" has no setup function.')
         pass
 
-    def __set_name__(self, owner, name):
-        print(owner, name)
-        pass
+    # def __set_name__(self, owner, name):
+    #     print(owner, name)
+    #     pass
 
     pass
 
@@ -494,7 +573,7 @@ if __name__ == '__main__1':
     # endSlideCode = subTest.slide3.code.co_code[codeStartIndex + len(kwEndSlideStart):codeEndIndex]
     pass
 pass
-if __name__ == '__main__':
+if __name__ == '__main__2':
     """Testing of __new__ vs __init__ args and order"""
 
     class testClass:
@@ -515,4 +594,88 @@ if __name__ == '__main__':
         pass
 
     t = testClass('a', 'b', 3, x=2, y=int)
+    pass
+pass
+if __name__ == '__main__3':
+    """Subclass method override test."""
+
+    class TestClass:
+
+        def fun1(self):
+            print(f'in fun1 of {self}')
+            pass
+
+        def fun2(self):
+            print(f'in fun2 of {self}')
+            pass
+
+        def __init_subclass__(cls, **kwargs):
+            super(TestClass, cls).__init_subclass__(**kwargs)
+            cls.fun1 = TestClass.fun2
+            pass
+
+        pass
+
+    class TestSubClass(TestClass):
+        pass
+
+    a = TestClass()
+    b = TestSubClass()
+
+    a.fun1()
+    a.fun2()
+
+    b.fun1()
+    b.fun2()
+
+    pass
+pass
+if __name__ == '__main__4':
+    """Testing of "all" setup with Topic"""
+
+    class subTest(Topic):
+        @Slide
+        def slide0(self):
+            pass
+
+        @Slide
+        def slide1(self):
+            self.endSlide(notes="test")
+            pass
+
+        @Slide
+        def slide2(self):
+            self.play(run_time=2)
+
+            self.endSlide(notes="test")
+            pass
+        pass
+
+    a = subTest()
+    assert list(a.__get_slides__()) == list(a.__get_instance_slides__())
+
+    class All(Topic):
+        # @Slide
+        # def slide01(self):
+        #     # Animations and body go here
+        #
+        #     self.wait(0.2)
+        #     self.endSlide(notes="""\
+        # """)
+        #     # Actions and cleanup that don't depend
+        #     # on items for the next slide goes here
+        #     pass
+        #
+        # # noinspection PyAttributeOutsideInit
+        # @slide01.setup
+        # def slide01(self, slide: Slide, on=True, *args, **kwargs):
+        #     # Setup for this slide goes here.
+        #
+        #     # Use slide.off() to turn off this slide
+        #     if not on:
+        #         slide.off()
+        #         pass
+        #     pass
+        pass
+
     pass
