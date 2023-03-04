@@ -5,17 +5,12 @@ import types
 import re
 import sys
 import os
-try:
-    from .PresentationLogger import logger, TOPIC_INFO
-except ImportError as e:
-    # TODO (2023-03-03 @ 14:27:02): when in-place development is done, remove this.
-    from PresentationLogger import logger, TOPIC_INFO
-    logger.error("", exc_info=e)
-try:
-    from .new_pptxscene import PPTXScene
-except ImportError:
-    # TODO (2023-03-03 @ 14:27:02): when in-place development is done, remove this.
-    from new_pptxscene import PPTXScene
+
+if __name__ == '__main__':
+    __package__ = "presentations"
+    pass
+from .PresentationLogger import logger, TOPIC_INFO
+from .new_pptxscene import PPTXScene
 
 
 # TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single 
