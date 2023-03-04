@@ -63,6 +63,7 @@ etreeElementClass = etree._Element
 
 url_schema = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 
+
 # TODO (2023-03-04 @ 11:12:21): It might be a good idea for these functions to all be staticmethod functions within the
 #  PPTXScene class.
 
@@ -308,8 +309,6 @@ def playEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dic
 
 # Quick and dirty implementation, copying most of PPTXScene from manim_pptx
 class PPTXScene(manim.Scene):
-    ask_for_permission = True
-
     def __init__(self, *args, **kwargs):
         self.output_folder = kwargs.pop("output_folder", "./pptx/")
         self.temporary_dir = kwargs.pop("temporary_dir", "./temp/")
@@ -560,32 +559,19 @@ class PPTXScene(manim.Scene):
     def render(self, *args, **kwargs):
         presentation_name = getattr(type(self), "__presentation_name__", type(self).__name__) + '.pptx'
         presentation_path = os.path.join(self.output_folder, presentation_name)
-        overwrite_approval = True
-        # TODO (2023-03-04 @ 14:02:39): this doesn't actually work, still get a permission error from os.remove
-        # print(*(f'{permission}: {os.access(presentation_path, permission)}'
-        #         for permission in range(10)  # [os.R_OK, os.W_OK, os.X_OK, os.F_OK]
-        #         ), sep='\n')
         # Check if file already exists
-        if os.path.isfile(presentation_path) and self.ask_for_permission:
-            # I can make a more complicated check by trying to save something to the file, but this is sufficient
-            # for now.
-            time.sleep(1)  # This is so all GLib-GIO-WARNING messages come before the input.
-            # Ask for permission to overwrite the existing file
-            input_message = f'\nA file {presentation_path} already exists.  Press enter to allow the file to be ' \
-                            f'overwritten, otherwise type "n" and press enter to exit and make any changes you ' \
-                            f'would like.\t\t'
-            overwrite_response = manim.console.input(input_message).lower().strip()
-            # TODO (2023-03-04 @ 13:56:03): add options for
-            #  "t": try, where we just set overwrite_approval to false, in which case an error is raised by prs.save
-            #  "r": rename, where a dialog is opened to rename the file (within the same directory)
-            if overwrite_response == 'n':  # exit program
-                raise PermissionError(f'Must provide permission to remove existing file {presentation_path}')
-            elif overwrite_response == '' or overwrite_response == 'y':  # approval given
-                overwrite_approval = True
+        if os.path.isfile(presentation_path):
+            # Check to make sure saving the resulting power point will be possible before spending time to create it
+            try:
                 os.remove(presentation_path)
-                # os.rename(presentation_path, os.path.join(self.output_folder, "test_" + presentation_name))
-            else:
-                raise IOError(f'non-option')
+                logger.log(PPTX_INFO, f'Removed previously existing PowerPoint file.')
+                pass
+            except PermissionError as e:
+                e.strerror = f'Currently existing PowerPoint file is protected from modification by manim; the ' \
+                             f'resulting presentation is not be able to be saved with the name {presentation_name}' \
+                             f'.  Please manually rename or delete the existing file, then try again.' \
+                             f'\n\tFile location:'
+                raise
             pass
 
         # TODO (2023-03-03 @ 07:49:59): DOCUMENT!!!
@@ -666,12 +652,7 @@ class PPTXScene(manim.Scene):
                 pass
             pass
 
-        # Remove the old pptx file of the same name, if necessary
-        if overwrite_approval and os.path.isfile(presentation_path):
-            os.remove(presentation_path)
-            logger.log(PPTX_INFO, f'Removed previous PowerPoint file.  To require permission, change class variable '
-                                  f'"ask_for_permission" to True.')
-            pass
+        # Save presentation
         prs.save(presentation_path)
         logger.log(PPTX_INFO, f'PowerPoint written to: {presentation_name} in {self.output_folder}')
         # print(self.renderer.file_writer.partial_movie_directory)
