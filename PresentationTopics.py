@@ -10,7 +10,7 @@ if __name__ == '__main__':
     __package__ = "presentations"
     pass
 from .PresentationLogger import logger, TOPIC_INFO
-from .new_pptxscene import PPTXScene
+from .PPTXScene import PPTXScene
 
 
 # TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single 
@@ -37,6 +37,10 @@ from .new_pptxscene import PPTXScene
 # TODO (2023-03-01 @ 11:30:50): Figure out how to get "All" class to re-use video and image resources from other topics
 
 # TODO (2023-03-01 @ 12:57:04): Figure out how to determine when the powerpoint needs to be restarted?
+
+# TODO (2023-03-04 @ 10:47:11): Figure out how to enforce Topic to inherit from different classes, i.e. to enable use
+#  of manim_pptx.PPTXScene or other slide show scene options. AND make it so the classes inherited from must have
+#  certain methods implemented, similar to ABC meta classes.
 
 
 LiveTemplateInstructionsForSlide = r'''
