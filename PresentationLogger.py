@@ -1,5 +1,6 @@
 import logging
 import sys
+import warnings
 
 # See:
 # https://docs.python.org/3.8/library/logging.html
@@ -31,6 +32,12 @@ else:
     pass
 logger.setLevel(logging.DEBUG)
 
+# # Make sure warnings are captured by logger
+# logging.captureWarnings(True)
+# warnings_logger = logging.getLogger("py.warnings")
+# warnings_logger.addHandler(logger.handlers[0])
+# # ^ Doesn't work
+
 if __name__ == '__main__':
     """Stream test"""
     if sys.stdout not in {getattr(x, 'stream', None) for x in logger.handlers}:
@@ -40,4 +47,8 @@ if __name__ == '__main__':
     logger.info("Test Log")
     logger.log(17, 'Non-standard test log.')
 
+    pass
+if __name__ == '__main__':
+    """Warning test"""
+    warnings.warn("Test warning", Warning, 2)
     pass

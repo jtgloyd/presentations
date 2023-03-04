@@ -12,8 +12,7 @@ if __name__ == '__main__':
 from .PresentationLogger import logger, TOPIC_INFO
 from .PPTXScene import PPTXScene
 
-
-# TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single 
+# TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single
 #  slide into one single video, then putting that video into power point as a single playthrough (or something to that 
 #  effect).  Alternatively, it might be better to change the self.wait command to not affect the videos, but instead 
 #  either pause playback (preferred if possible) or split the videos and add a pause to the slide via animations.
@@ -142,14 +141,11 @@ class Topic(PPTXScene):
     This is also extensible to other formats of slide show creation using Manim if/when we want to switch over to
     something that doesn't use power point since we've been having so many issues with it (or, when we get overly
     ambitious and want to make our own version *sigh*)"""
-    
+
     _wait_override_ = None
 
     @typing.final
     def construct(self):
-        # TODO (2023-02-21 @ 13:02:55): remove this check when satisfied they always agree
-        assert list(self.__get_instance_slides__()) == list(self.__get_slides__())
-
         logger.log(TOPIC_INFO, f'Constructing {self.__class__.__name__}.')
         slides = list(self.__get_slides__())
         self.slideSetup(slides=slides)
@@ -186,14 +182,16 @@ class Topic(PPTXScene):
             pass
         pass
 
-    # TODO (2023-02-21 @ 13:02:55): remove this when accompanying check is removed
     def __get_instance_slides__(self):
+        warnings.warn("The '__get_instance_slides__' method is deprecated, "
+                      "use '__get_slides__' instead", DeprecationWarning, 2)
+        # TODO (2023-02-21 @ 13:02:55): remove this
         return filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
 
     @classmethod
     def __get_slides__(cls):
         return filter(Slide.__instancecheck__, cls.__dict__.values())
-    
+
     def wait(self, *args, **kwargs):
         if self._wait_override_ is not None:
             if "duration" not in kwargs and args:
@@ -237,14 +235,14 @@ class Topic(PPTXScene):
         pass
 
     def slideConstruct(self, **kwargs):
-        slides = kwargs.get('slides', self.__get_slides__())
+        slides: typing.List[Slide] = kwargs.get('slides', self.__get_slides__())
         for slide in slides:
-            slide(self)
+            slide.constructProtocol(self)
             pass
         pass
 
     def slideSetup(self, **kwargs):
-        slides = kwargs.get('slides', self.__get_slides__())
+        slides: typing.List[Slide] = kwargs.get('slides', self.__get_slides__())
         for slide in slides:
             slide.setupProtocol(self)
             pass
@@ -263,14 +261,12 @@ class Slide:
     code: types.CodeType
 
     # TODO: figure out how to enforce functions decorated with @NAME.setup to have signature of (self, owner)
-    #  -> I think this is going to be done in the inspections or inspections settings
+    #  -> I think this is going to be done in the inspections or inspections settings (or possibly with a pyi stub)
 
     def __init__(self, constructFunction: types.FunctionType, setupFunction: types.FunctionType = None):
         self.constructFunction = constructFunction
         self.__on__ = True
         self.setupFunction = setupFunction
-        # self.code = self.constructFunction.__code__
-        # self.name = self.constructFunction.__name__
         self.__setup__()
         # TODO: convert the values we get out of the code object (and the code object itself) into properties
         #  with setters so the notes and such can be changed from this object?
@@ -378,11 +374,15 @@ class Slide:
         pass
 
     def __call__(self, owner, *args, **kwargs):
+        warnings.warn("The '__call__' method is deprecated, "
+                      "use 'constructProtocol' instead", DeprecationWarning, 2)
+        # TODO (2023-03-04 @ 15:58:34): remove this
+
         logger.log(TOPIC_INFO, f'Called slide "{self.name}"')
         if self.__on__:
             return self.constructFunction(owner, *args, **kwargs)
         # log slide being off
-        logger.log(TOPIC_INFO, f'Slide "{self.name}" skipped because it was turned off.')
+        logger.log(TOPIC_INFO, f'Slide "{self.name}" skipped because it is turned off.')
         pass
 
     def off(self, off=True):
@@ -464,6 +464,7 @@ if __name__ == '__main__1':
     """Testing/Exploration of Code Objects to Pull Out 'endSlide' Command Usage"""
 
 
+    #
     # class subTest(Topic):
     #     @Slide
     #     def slide1(self):
@@ -507,7 +508,6 @@ if __name__ == '__main__1':
     #               if isinstance(value, Slide)}
     # print(*[f"{name}: {code.co_code}"
     #         for name, code in slideCodes.items()], sep='\n')
-
 
     class subTest(Topic):
         @Slide
@@ -600,6 +600,7 @@ pass
 if __name__ == '__main__2':
     """Testing of __new__ vs __init__ args and order"""
 
+
     class testClass:
 
         def __new__(cls, *args, **kwargs):
@@ -617,11 +618,13 @@ if __name__ == '__main__2':
 
         pass
 
+
     t = testClass('a', 'b', 3, x=2, y=int)
     pass
 pass
 if __name__ == '__main__3':
     """Subclass method override test."""
+
 
     class TestClass:
 
@@ -640,8 +643,10 @@ if __name__ == '__main__3':
 
         pass
 
+
     class TestSubClass(TestClass):
         pass
+
 
     a = TestClass()
     b = TestSubClass()
@@ -656,6 +661,7 @@ if __name__ == '__main__3':
 pass
 if __name__ == '__main__4':
     """Testing of "all" setup with Topic"""
+
 
     class subTest(Topic):
         @Slide
@@ -673,10 +679,13 @@ if __name__ == '__main__4':
 
             self.endSlide(notes="test")
             pass
+
         pass
+
 
     a = subTest()
     assert list(a.__get_slides__()) == list(a.__get_instance_slides__())
+
 
     class All(Topic):
         # @Slide
@@ -701,5 +710,6 @@ if __name__ == '__main__4':
         #         pass
         #     pass
         pass
+
 
     pass
