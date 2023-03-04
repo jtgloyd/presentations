@@ -64,15 +64,6 @@ url_schema = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 # TODO (2023-03-04 @ 11:12:21): It might be a good idea for these functions to all be staticmethod functions within the
 #  PPTXScene class.
 
-# TODO (2023-03-04 @ 11:43:40): Combination of animations should happen when "endSlide" is called, instead of inside
-#  the "render" method (that way we don't have to worry about the partial videos being overwritten).
-#  AND the value of "config.max_files_cached" should be updated to be AT LEAST the largest number of animations in a
-#  single slide (probably more to be safe); it should be possible to do so internally by having Slide or endSlide
-#  inspect for this number. <- actually, this might be best accomplished within the "play" method, since it's called
-#  for each animation
-#  ALSO, the resulting combined video should probably be hashed so it can be reused (although this barely takes any
-#  time once the component videos are made, so maybe don't bother)
-
 
 def addAutoNext(slide: pptx.slide.Slide):
     transition = etree.Element(url_schema + "transition", {
@@ -303,6 +294,16 @@ def playEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dic
     pass
 
 
+# TODO (2023-03-04 @ 11:43:40): Combination of animations should happen when "endSlide" is called, instead of inside
+#  the "render" method (that way we don't have to worry about the partial videos being overwritten).
+#  AND the value of "config.max_files_cached" should be updated to be AT LEAST the largest number of animations in a
+#  single slide (probably more to be safe); it should be possible to do so internally by having Slide or endSlide
+#  inspect for this number. <- actually, this might be best accomplished within the "play" method, since it's called
+#  for each animation
+#  ALSO, the resulting combined video should probably be hashed so it can be reused (although this barely takes any
+#  time once the component videos are made, so maybe don't bother)
+
+
 # Quick and dirty implementation, copying most of PPTXScene from manim_pptx
 class PPTXScene(manim.Scene):
     def __init__(self, *args, **kwargs):
@@ -325,7 +326,6 @@ class PPTXScene(manim.Scene):
         super(PPTXScene, self).play(*args, **kwargs)
         self.currentAnimation += 1
         self.currentSlideAnimations += 1
-        # logger.info(f"Add animation: {self.currentAnimation}")
         logger.log(PPTX_INFO, f"Add animation: {self.currentAnimation}")
         pass
 
@@ -335,8 +335,6 @@ class PPTXScene(manim.Scene):
         pass
 
     def endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
-        # logger.info(f"End slide: {self.currentSlide} with animations "
-        #             f"[{self.slideStartAnimation},  {self.currentAnimation}]")
         logger.log(PPTX_INFO, f"End slide: {self.currentSlide} with animations "
                               f"[{self.slideStartAnimation},  {self.currentAnimation}]")
         self.slides.append(dict(
@@ -389,7 +387,6 @@ class PPTXScene(manim.Scene):
         if not os.path.exists(self.temporary_dir):
             os.mkdir(self.temporary_dir)
 
-        # logger.info("Creating PPTX")
         logger.log(PPTX_INFO, "Creating PPTX")
 
         prs = pptx.Presentation(pptx=os.path.join(os.path.split(__file__)[0], "template.pptx"))
@@ -400,7 +397,6 @@ class PPTXScene(manim.Scene):
         blank_slide_layout = prs.slide_layouts[6]
 
         for tslidei, tslide in enumerate(self.slides):
-            # logger.debug(f"Add slide {tslidei} with animations [{tslide['start']}, {tslide['end']}]")
             logger.log(PPTX_DEBUG, f"Add slide {tslidei} with animations [{tslide['start']}, {tslide['end']}]")
 
             slide_movie_files = self.renderer.file_writer.partial_movie_files[tslide["start"]:tslide["end"]]
@@ -420,7 +416,6 @@ class PPTXScene(manim.Scene):
                 thumb_file = os.path.join(self.temporary_dir, os.path.basename(src_file) + ".png")
                 self.save_video_thumb(src_file, thumb_file)
 
-                # logger.debug(f"adding video {src_file}")
                 logger.log(PPTX_DEBUG, f"adding video {src_file}")
                 clip = slide.shapes.add_movie(src_file, 0, 0, prs.slide_width, prs.slide_height,
                                               mime_type='video/mp4', poster_frame_image=thumb_file)
@@ -479,7 +474,6 @@ class PPTXScene(manim.Scene):
         if not os.path.exists(self.temporary_dir):
             os.mkdir(self.temporary_dir)
 
-        # logger.info("Creating PPTX")
         logger.log(PPTX_INFO, "Creating PPTX")
 
         # open/load-in template presentation
@@ -491,7 +485,6 @@ class PPTXScene(manim.Scene):
         blank_slide_layout = prs.slide_layouts[6]
 
         for tslidei, tslide in enumerate(self.slides):
-            # logger.debug(f"Add slide {tslidei} with animations [{tslide['start']}, {tslide['end']}]")
             logger.log(PPTX_DEBUG, f"Add slide {tslidei} with animations [{tslide['start']}, {tslide['end']}]")
 
             slide_movie_files = self.renderer.file_writer.partial_movie_files[tslide["start"]:tslide["end"]]
@@ -512,7 +505,6 @@ class PPTXScene(manim.Scene):
                 thumb_file = os.path.join(self.temporary_dir,
                                           os.path.splitext(os.path.basename(src_file))[0] + ".png")
                 self.save_video_thumb(src_file, thumb_file)
-                # logger.debug(f"adding video {src_file}")
                 logger.log(PPTX_DEBUG, f"adding video {src_file}")
                 clip = slide.shapes.add_movie(src_file, 0, 0, prs.slide_width, prs.slide_height,
                                               mime_type='video/mp4', poster_frame_image=thumb_file)
@@ -562,14 +554,27 @@ class PPTXScene(manim.Scene):
         pass
 
     def render(self, *args, **kwargs):
+        # TODO (2023-03-04 @ 08:15:58): add check at beginning of method to make sure there is read/write access to
+        #  the file
+        # Check to make sure there is write access to the pptx file.
+        presentation_name = getattr(type(self), "__presentation_name__", type(self).__name__) + '.pptx'
+        if os.path.isfile(os.path.join(self.output_folder, presentation_name)):
+            try:
+                temp_prs = pptx.Presentation(pptx=os.path.join(self.output_folder, presentation_name))
+                temp_prs.save(os.path.join(self.output_folder, presentation_name))
+            except PermissionError as e:
+                raise
+            except pptx.exc.PackageNotFoundError as e:
+                raise
+            pass
+
         # TODO (2023-03-03 @ 07:49:59): DOCUMENT!!!
         super(PPTXScene, self).render(*args, **kwargs)
         if not os.path.exists(self.output_folder):
             os.mkdir(self.output_folder)
         if not os.path.exists(self.temporary_dir):
             os.mkdir(self.temporary_dir)
-        # logger.info("Creating PPTX")
-        logger.log(PPTX_INFO, "[blue]Creating PPTX[/blue]")
+        logger.log(PPTX_INFO, "Creating PPTX")
 
         # open/load-in template presentation
         prs = pptx.Presentation(pptx=os.path.join(os.path.split(__file__)[0], "template.pptx"))
@@ -580,7 +585,6 @@ class PPTXScene(manim.Scene):
         blank_slide_layout = prs.slide_layouts[6]
 
         for tslidei, tslide in enumerate(self.slides):
-            # logger.debug(f"Add slide {tslidei} with animations [{tslide['start']}, {tslide['end']}]")
             logger.log(PPTX_DEBUG, f"Add slide {tslidei} with animations [{tslide['start']}, {tslide['end']}]")
 
             slide_movie_files = self.renderer.file_writer.partial_movie_files[tslide["start"]:tslide["end"]]
@@ -594,7 +598,6 @@ class PPTXScene(manim.Scene):
             slide_movie_file = os.path.join(self.temporary_dir,
                                             f"slide_{tslidei}" +
                                             os.path.splitext(os.path.basename(first_movie_file))[1])
-            # logger.debug(f"Combine animations [{tslide['start']}, {tslide['end']}]")
             logger.log(PPTX_DEBUG, f"Combine animations [{tslide['start']}, {tslide['end']}]")
             self.renderer.file_writer.combine_files(slide_movie_files, slide_movie_file,
                                                     create_gif=False, includes_sound=False)
@@ -606,7 +609,6 @@ class PPTXScene(manim.Scene):
                                           f"slide_{tslidei}_thumbnail.png"
                                           )
             self.save_video_thumb(first_movie_file, thumbnail_file)
-            # logger.debug(f"adding animation {slide_movie_file}")
             logger.log(PPTX_DEBUG, f"adding animation {slide_movie_file}")
             clip = slide.shapes.add_movie(slide_movie_file, 0, 0, prs.slide_width, prs.slide_height,
                                           mime_type='video/mp4', poster_frame_image=thumbnail_file)
@@ -644,13 +646,10 @@ class PPTXScene(manim.Scene):
                 pass
             pass
 
-        presentation_name = getattr(type(self), "__presentation_name__", type(self).__name__) + '.pptx'
         prs.save(os.path.join(self.output_folder, presentation_name))
-        # TODO (2023-03-04 @ 08:15:58): add check at beginning of method to make sure there is read/write access to
-        #  the file
         logger.log(PPTX_INFO, f'PowerPoint written to: {presentation_name}\n'
                               f'in {self.output_folder}')
-        print(self.renderer.file_writer.partial_movie_directory)
+        # print(self.renderer.file_writer.partial_movie_directory)
         pass
 
     pass
@@ -691,7 +690,6 @@ if __name__ == '__main__':
         thumb_file_t = os.path.join(temporary_dir_t,
                                     os.path.splitext(os.path.basename(src_file_t))[0] + ".png")
         PPTXScene.save_video_thumb(src_file_t, thumb_file_t)
-        # logger.log(PPTX_DEBUG, f"adding video {src_file}")
         clip_t = slide_t.shapes.add_movie(src_file_t, 0, 0, prs_t.slide_width, prs_t.slide_height,
                                           mime_type='video/mp4', poster_frame_image=thumb_file_t)
         image_dict_t = {
