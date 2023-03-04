@@ -1,12 +1,21 @@
-from manim_pptx import PPTXScene
+# from manim_pptx import PPTXScene
 import warnings
 import typing
 import types
 import re
+import sys
+import os
 try:
-    from .PresentationLogger import logger, PRESENTATION_INFO
+    from .PresentationLogger import logger, TOPIC_INFO
+except ImportError as e:
+    # TODO (2023-03-03 @ 14:27:02): when in-place development is done, remove this.
+    from PresentationLogger import logger, TOPIC_INFO
+    logger.error("", exc_info=e)
+try:
+    from .new_pptxscene import PPTXScene
 except ImportError:
-    from PresentationLogger import logger, PRESENTATION_INFO
+    # TODO (2023-03-03 @ 14:27:02): when in-place development is done, remove this.
+    from new_pptxscene import PPTXScene
 
 
 # TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single 
@@ -27,6 +36,12 @@ except ImportError:
 # TODO (2023-02-16 @ 08:37:11): Add documentation to Slide class and improve documentation for Topic
 
 # TODO (2023-02-21 @ 13:29:30): Make custom exceptions (and possibly warnings) instead of using the builtin ones
+
+# TODO (2023-03-01 @ 11:30:33): Update live template instructions
+
+# TODO (2023-03-01 @ 11:30:50): Figure out how to get "All" class to re-use video and image resources from other topics
+
+# TODO (2023-03-01 @ 12:57:04): Figure out how to determine when the powerpoint needs to be restarted?
 
 
 LiveTemplateInstructionsForSlide = r'''
@@ -136,7 +151,7 @@ class Topic(PPTXScene):
         # TODO (2023-02-21 @ 13:02:55): remove this check when satisfied they always agree
         assert list(self.__get_instance_slides__()) == list(self.__get_slides__())
 
-        logger.log(PRESENTATION_INFO, f'Constructing {self.__class__.__name__}.')
+        logger.log(TOPIC_INFO, f'Constructing {self.__class__.__name__}.')
         slides = list(self.__get_slides__())
         self.slideSetup(slides=slides)
         self.slideConstruct(slides=slides)
@@ -144,7 +159,7 @@ class Topic(PPTXScene):
 
     @typing.final
     def __construct_all__(self):
-        logger.log(PRESENTATION_INFO, f'Called "__construct_all__" from {self}')
+        logger.log(TOPIC_INFO, f'Called "__construct_all__" from {self}')
 
         # TODO (2023-02-21 @ 12:29:36): Add documentation for this and with naming a subclass "All"
         if len(self.__class__.__bases__) != 1:
@@ -160,7 +175,7 @@ class Topic(PPTXScene):
         topics = [topic for topic in parent_class.__subclasses__()
                   if not isinstance(self, topic)]  # exclude own class to avoid causing loop
         for topic in topics:
-            logger.log(PRESENTATION_INFO, f'Creating {topic.__name__} from {self}')
+            logger.log(TOPIC_INFO, f'Creating {topic.__name__} from {self}')
             # Run global setup from topic
             topic.setup(self)
             # Get slides from topic
@@ -195,7 +210,7 @@ class Topic(PPTXScene):
         # "__construct_all__" method.  Furthermore, it may not have any Slide decorated methods itself, and its "setup"
         # method should be identical to the "Topic.setup" method, since these aren't be used by the "__construct_all__"
         # method.
-        if cls.__name__ == "All":
+        if cls.__qualname__ == "All":
             if list(cls.__get_slides__()):
                 # TODO (2023-02-21 @ 13:13:08): Move this into the Slide class so the error is raised by that line
                 #  instead of the "class All(Topic):" line
@@ -211,7 +226,15 @@ class Topic(PPTXScene):
                 )
                 raise setup_in_All
             cls.construct = cls.__construct_all__
+            # print(os.path.splitext(os.path.split(sys._getframe(1).f_globals['__file__'])[1])[0])
+            # cls.__name__ = os.path.splitext(os.path.split(sys._getframe(1).f_globals['__file__'])[1])[0]
+
+            # noinspection PyUnresolvedReferences,PyProtectedMember
+            cls.__presentation_name__ = os.path.splitext(os.path.split(sys._getframe(1).f_globals['__file__'])[1])[0]
+            # TODO (2023-03-01 @ 10:50:09): Possibly replace this ^ with a class-property implementation of __name__
             pass
+        else:
+            cls.__presentation_name__ = cls.__name__
         pass
 
     def slideConstruct(self, **kwargs):
@@ -356,11 +379,11 @@ class Slide:
         pass
 
     def __call__(self, owner, *args, **kwargs):
-        logger.log(PRESENTATION_INFO, f'Called slide "{self.name}"')
+        logger.log(TOPIC_INFO, f'Called slide "{self.name}"')
         if self.__on__:
             return self.constructFunction(owner, *args, **kwargs)
         # log slide being off
-        logger.log(PRESENTATION_INFO, f'Slide "{self.name}" skipped because it was turned off.')
+        logger.log(TOPIC_INFO, f'Slide "{self.name}" skipped because it was turned off.')
         pass
 
     def off(self, off=True):
@@ -374,20 +397,20 @@ class Slide:
 
     def constructProtocol(self, owner, *args, **kwargs):
         if self.__on__:
-            logger.log(PRESENTATION_INFO, f'Constructing slide "{self.name}".')
+            logger.log(TOPIC_INFO, f'Constructing slide "{self.name}".')
             return self.constructFunction(owner, *args, **kwargs)
         else:
             # log slide being off
-            logger.log(PRESENTATION_INFO, f'Construction of slide "{self.name}" skipped because it is turned off.')
+            logger.log(TOPIC_INFO, f'Construction of slide "{self.name}" skipped because it is turned off.')
         pass
 
     def setupProtocol(self, owner, *args, **kwargs):
         if self.setupFunction is not None:
-            logger.log(PRESENTATION_INFO, f'Executing slide "{self.name}" setup.')
+            logger.log(TOPIC_INFO, f'Executing slide "{self.name}" setup.')
             return self.setupFunction(owner, self, *args, **kwargs)
         else:
             # log "no setup"
-            logger.log(PRESENTATION_INFO, f'Setup for slide "{self.name}" skipped because it has no setup function.')
+            logger.log(TOPIC_INFO, f'Setup for slide "{self.name}" skipped because it has no setup function.')
         pass
 
     # def __set_name__(self, owner, name):
