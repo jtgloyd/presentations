@@ -1,5 +1,3 @@
-import time
-
 if __name__ == '__main__':
     __package__ = "presentations"
     pass
@@ -49,6 +47,7 @@ etreeElementClass = etree._Element
 # TODO (2023-03-04 @ 09:10:37): I can get the slides to show their end state by putting an image of the end state in
 #  the front of the slide (i.e. the next slide's start image) and then immediately removing the image once the slide
 #  starts.  This might be jittery though, so only do this if necessary.
+#  -> A better way to do this would be to "appear" the image in the foreground after the video completes.
 
 # Possible future issues:
 #   -There may still be issues with having to restart the slide show when presenting from desktop if the number of
@@ -297,16 +296,6 @@ def playEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dic
     pass
 
 
-# TODO (2023-03-04 @ 11:43:40): Combination of animations should happen when "endSlide" is called, instead of inside
-#  the "render" method (that way we don't have to worry about the partial videos being overwritten).
-#  AND the value of "config.max_files_cached" should be updated to be AT LEAST the largest number of animations in a
-#  single slide (probably more to be safe); it should be possible to do so internally by having Slide or endSlide
-#  inspect for this number. <- actually, this might be best accomplished within the "play" method, since it's called
-#  for each animation
-#  ALSO, the resulting combined video should probably be hashed so it can be reused (although this barely takes any
-#  time once the component videos are made, so maybe don't bother)
-
-
 # Quick and dirty implementation, copying most of PPTXScene from manim_pptx
 class PPTXScene(manim.Scene):
     def __init__(self, *args, **kwargs):
@@ -326,6 +315,16 @@ class PPTXScene(manim.Scene):
         return super(PPTXScene, self).construct()
 
     def play(self, *args, **kwargs):
+        if self.currentSlideAnimations + 10 >= manim.config.max_files_cached:
+            # TODO (2023-03-05 @ 11:38:39): maybe make this a warning (make a PPTX_WARNING level)
+            new_max_files = (3 * manim.config.max_files_cached // 2)
+            logger.log(PPTX_INFO,
+                       f'The number of animations in slide {self.currentSlide} is approaching the max number of '
+                       f'cached files.  Adjusting the max number of cached files from {manim.config.max_files_cached} '
+                       f'to {new_max_files}.  To avoid this, manually adjust manim.config.max_files_cached in your '
+                       f'script.')
+            manim.config.max_files_cached = new_max_files
+            pass
         super(PPTXScene, self).play(*args, **kwargs)
         self.currentAnimation += 1
         self.currentSlideAnimations += 1
@@ -337,7 +336,9 @@ class PPTXScene(manim.Scene):
         # self.currentAnimation += 1
         pass
 
-    def endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
+    def all_endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
+        warnings.warn("The 'all_endSlide' method is deprecated, "
+                      "use 'endSlide' instead", DeprecationWarning, 2)
         logger.log(PPTX_INFO, f"End slide: {self.currentSlide} with animations "
                               f"[{self.slideStartAnimation},  {self.currentAnimation}]")
         self.slides.append(dict(
@@ -354,8 +355,61 @@ class PPTXScene(manim.Scene):
         self.currentSlideAnimations = 0
         pass
 
+    def endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
+        logger.log(PPTX_INFO,
+                   f"End slide: {self.currentSlide} with animations "
+                   f"[{self.slideStartAnimation},  {self.currentAnimation}]")
+        slide_info = dict(
+            type="loop" if loop else "slide",
+            start=self.slideStartAnimation,
+            end=self.currentAnimation,
+            number=self.currentSlide,
+            autonext=autonext,
+            notes=notes,
+            shownextnotes=shownextnotes,
+        )
+        slide_info.update(
+            self.__combineSlideAnimations__(self.currentSlide, self.slideStartAnimation, self.currentAnimation))
+        self.slides.append(slide_info)
+
+        self.currentSlide += 1
+        self.slideStartAnimation = self.currentAnimation
+        self.currentSlideAnimations = 0
+        pass
+
+    def __combineSlideAnimations__(self, slide_number: int, start_index: int, end_index: int):
+        """Combine all animations for the slide into a single video."""
+        slide_movie_files = self.renderer.file_writer.partial_movie_files[start_index:end_index]
+        first_movie_file = slide_movie_files[0]
+        # TODO (2023-03-05 @ 11:40:39): hash combined video (just hash combination of the contributing video hashes)
+        #  so it can be reused (although this barely takes any time once the component videos are made, so maybe
+        #  don't bother)
+        slide_movie_file = os.path.join(self.temporary_dir,
+                                        f"slide_{slide_number}" +
+                                        os.path.splitext(os.path.basename(first_movie_file))[1])
+
+        # This is very messy, and should eventually use more of the components seen in
+        # manim.scene.scene_file_writer.py
+        logger.log(PPTX_DEBUG, f"Combining animations [{start_index}, {end_index}]")
+        self.renderer.file_writer.combine_files(slide_movie_files, slide_movie_file,
+                                                create_gif=False, includes_sound=False)
+
+        # Create thumbnail for animation
+        thumbnail_file = os.path.join(
+            self.temporary_dir,
+            # os.path.splitext(os.path.basename(first_movie_file))[0] + ".png"
+            f"slide_{slide_number}_thumbnail.png"
+        )
+        self.save_video_thumb(first_movie_file, thumbnail_file)
+
+        return_data = {
+            'slide_movie_file': slide_movie_file,
+            'thumbnail_file': thumbnail_file,
+        }
+        return return_data
+
     @staticmethod
-    def save_video_thumb(filename, imgname):
+    def save_video_thumb(filename, image_name):
         subprocess.run([
             # constants.FFMPEG_BIN,  # This worked as of manim v 0.15.2
             # 'ffmpeg',  # hardcode option  (this is a workaround b/c manim.constants no longer has FFMPEG_BIN)
@@ -365,9 +419,9 @@ class PPTXScene(manim.Scene):
             '-vframes', '1',  # one frame
             '-loglevel', 'error',
             '-y',  # overwrite
-            imgname,
+            image_name,
         ], stdout=subprocess.PIPE)
-        return imgname
+        return image_name
 
     @staticmethod
     def get_dur(filename):
@@ -381,7 +435,7 @@ class PPTXScene(manim.Scene):
 
     def old_render(self, *args, **kwargs):
         warnings.warn("The 'old_render' method is deprecated, "
-                      "use 'many_render' instead", DeprecationWarning, 2)
+                      "use 'render' instead", DeprecationWarning, 2)
         super(PPTXScene, self).render(*args, **kwargs)
 
         if not os.path.exists(self.output_folder):
@@ -556,7 +610,9 @@ class PPTXScene(manim.Scene):
         prs.save(os.path.join(self.output_folder, presentation_name + '.pptx'))
         pass
 
-    def render(self, *args, **kwargs):
+    def all_render(self, *args, **kwargs):
+        warnings.warn("The 'all_render' method is deprecated, "
+                      "use 'render' instead", DeprecationWarning, 2)
         presentation_name = getattr(type(self), "__presentation_name__", type(self).__name__) + '.pptx'
         presentation_path = os.path.join(self.output_folder, presentation_name)
         # Check if file already exists
@@ -615,6 +671,95 @@ class PPTXScene(manim.Scene):
                                           f"slide_{tslidei}_thumbnail.png"
                                           )
             self.save_video_thumb(first_movie_file, thumbnail_file)
+            logger.log(PPTX_DEBUG, f"adding animation {slide_movie_file}")
+            clip = slide.shapes.add_movie(slide_movie_file, 0, 0, prs.slide_width, prs.slide_height,
+                                          mime_type='video/mp4', poster_frame_image=thumbnail_file)
+            image_dict = {
+                "id": clip.element[0][0].attrib.get("id"),
+                "dur": PPTXScene.get_dur(slide_movie_file),
+            }
+            if tslide["autonext"]:
+                addAutoNext(slide)
+                outerchildTnLst = slide.element[3][0][0][0][0]
+                pass
+            else:
+                outerchildTnLst = slide.element[2][0][0][0][0]
+                pass
+
+            # Need to figure out what cTn means (or possibly childTn)
+
+            # No idea what this section is doing...
+            #   I think this has something to do with storing the animation sequence
+            seq = etree.Element(url_schema + "seq", concurrent="1", nextAc="seek")
+            outerchildTnLst.insert(0, seq)
+            cTnIDCounter = itertools.count(2)  # Some sort of counter
+            childTnLst = addCTn(cTnIDCounter, tslide, [image_dict], seq)
+            addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
+            addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
+
+            # Add effect to play the animation, starting immediately
+            currentdelay = 0
+            playEffect(cTnIDCounter, currentdelay, image_dict, childTnLst)
+
+            # No idea what this part is doing...
+            #   I think this makes it so the slide show goes smoothly onto the end-show slide (and possibly others)
+            for i in range(1, len(outerchildTnLst)):
+                outerchildTnLst[i][0][0].attrib["id"] = str(next(cTnIDCounter))
+                pass
+            pass
+
+        # Save presentation
+        prs.save(presentation_path)
+        logger.log(PPTX_INFO, f'PowerPoint written to: {presentation_name} in {self.output_folder}')
+        # print(self.renderer.file_writer.partial_movie_directory)
+        pass
+
+    def render(self, *args, **kwargs):
+        presentation_name = getattr(type(self), "__presentation_name__", type(self).__name__) + '.pptx'
+        presentation_path = os.path.join(self.output_folder, presentation_name)
+        # Check if file already exists
+        if os.path.isfile(presentation_path):
+            # Check to make sure saving the resulting power point will be possible before spending time to create it
+            try:
+                os.remove(presentation_path)
+                logger.log(PPTX_INFO, f'Removed previously existing PowerPoint file.')
+                pass
+            except PermissionError as e:
+                e.strerror = f'Currently existing PowerPoint file is protected from modification by manim; the ' \
+                             f'resulting presentation is not be able to be saved with the name {presentation_name}' \
+                             f'.  Please manually rename or delete the existing file, then try again.' \
+                             f'\n\tFile location:'
+                raise
+            pass
+
+        # TODO (2023-03-03 @ 07:49:59): DOCUMENT!!!
+        super(PPTXScene, self).render(*args, **kwargs)
+        if not os.path.exists(self.output_folder):
+            os.mkdir(self.output_folder)
+        if not os.path.exists(self.temporary_dir):
+            os.mkdir(self.temporary_dir)
+        logger.log(PPTX_INFO, "Creating PPTX")
+
+        # open/load-in template presentation
+        prs = pptx.Presentation(pptx=os.path.join(os.path.split(__file__)[0], "template.pptx"))
+        prs.slide_width = self.camera.pixel_width * 9525  # pixels to emu
+        prs.slide_height = self.camera.pixel_height * 9525
+        blank_slide_layout = prs.slide_layouts[6]
+
+        for slide_index, tslide in enumerate(self.slides):
+            logger.log(PPTX_DEBUG,
+                       f"Add slide {tslide['number']} with animations [{tslide['start']}, {tslide['end']}]")
+
+            notes = tslide["notes"] if tslide["notes"] else ""
+            if tslide["shownextnotes"] and len(self.slides) > slide_index + 1:
+                notes += "\n" + "\n".join(list(map(
+                    lambda x: "> " + x, self.slides[slide_index + 1]["notes"].split("\n"))))
+                pass
+
+            slide = prs.slides.add_slide(blank_slide_layout)
+            slide.notes_slide.notes_text_frame.text = notes
+            slide_movie_file = tslide['slide_movie_file']
+            thumbnail_file = tslide['thumbnail_file']
             logger.log(PPTX_DEBUG, f"adding animation {slide_movie_file}")
             clip = slide.shapes.add_movie(slide_movie_file, 0, 0, prs.slide_width, prs.slide_height,
                                           mime_type='video/mp4', poster_frame_image=thumbnail_file)
