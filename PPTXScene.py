@@ -1,7 +1,7 @@
 if __name__ == '__main__':
     __package__ = "presentations"
     pass
-from .PresentationLogger import logger, PPTX_INFO, PPTX_DEBUG
+from .PresentationLogger import logger, PPTX_INFO, PPTX_DEBUG, PPTX_WARNING
 
 import warnings
 import itertools
@@ -316,9 +316,8 @@ class PPTXScene(manim.Scene):
 
     def play(self, *args, **kwargs):
         if self.currentSlideAnimations + 10 >= manim.config.max_files_cached:
-            # TODO (2023-03-05 @ 11:38:39): maybe make this a warning (make a PPTX_WARNING level)
             new_max_files = (3 * manim.config.max_files_cached // 2)
-            logger.log(PPTX_INFO,
+            logger.log(PPTX_WARNING,
                        f'The number of animations in slide {self.currentSlide} is approaching the max number of '
                        f'cached files.  Adjusting the max number of cached files from {manim.config.max_files_cached} '
                        f'to {new_max_files}.  To avoid this, manually adjust manim.config.max_files_cached in your '

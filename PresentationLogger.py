@@ -11,6 +11,8 @@ PPTX_INFO = 15
 logging.addLevelName(PPTX_INFO, 'PPTX_INF')
 PPTX_DEBUG = 11
 logging.addLevelName(PPTX_DEBUG, 'PPTX_DBG')
+PPTX_WARNING = 28
+logging.addLevelName(PPTX_WARNING, 'PPTX_WRN')
 use_manim_logger = True
 
 if use_manim_logger:
