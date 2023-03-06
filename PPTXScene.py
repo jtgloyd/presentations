@@ -47,7 +47,8 @@ etreeElementClass = etree._Element
 # TODO (2023-03-04 @ 09:10:37): I can get the slides to show their end state by putting an image of the end state in
 #  the front of the slide (i.e. the next slide's start image) and then immediately removing the image once the slide
 #  starts.  This might be jittery though, so only do this if necessary.
-#  -> A better way to do this would be to "appear" the image in the foreground after the video completes.
+#  -> A better way to do this would be to "appear" the image in the front foreground AFTER the video completes (that
+#     way the image is there when viewing the slide in the deck, but not there when the animation is playing)
 
 # Possible future issues:
 #   -There may still be issues with having to restart the slide show when presenting from desktop if the number of
@@ -61,239 +62,6 @@ etreeElementClass = etree._Element
 
 
 url_schema = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
-
-
-# TODO (2023-03-04 @ 11:12:21): It might be a good idea for these functions to all be staticmethod functions within the
-#  PPTXScene class.
-
-
-def addAutoNext(slide: pptx.slide.Slide):
-    transition = etree.Element(url_schema + "transition", {
-        "spd": "slow",
-        "advTm": "0",
-    })
-    slide.element.insert(2, transition)
-    pass
-
-
-def addCTn(cTnIDCounter: itertools.count, tslide: dict, pics: list, seq: etreeElementClass):
-    innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="indefinite", nodeType="mainSeq")
-    childTnLst = etree.Element(url_schema + "childTnLst")
-    par1 = etree.Element(url_schema + "par")
-    cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
-    if tslide["type"] == "loop":
-        cTn.attrib["dur"] = str(reduce(lambda x, y: x + y, [p["dur"] for p in pics]))
-        cTn.attrib["repeatCount"] = "indefinite"
-    stCondLst = etree.Element(url_schema + "stCondLst")
-    cond1 = etree.Element(url_schema + "cond", delay="indefinite")
-    cond2 = etree.Element(url_schema + "cond", evt="onBegin", delay="0")
-    cond2tn = etree.Element(url_schema + "tn", val="2")
-    cond2.append(cond2tn)
-    stCondLst.append(cond1)
-    stCondLst.append(cond2)
-    cTn.append(stCondLst)
-    childTnLst2 = etree.Element(url_schema + "childTnLst")
-    cTn.append(childTnLst2)
-
-    par1.append(cTn)
-    childTnLst.append(par1)
-    innercTn.append(childTnLst)
-    seq.append(innercTn)
-    return childTnLst2
-
-
-def addPrevCondLst(seq: etreeElementClass):
-    prevCondLst = etree.Element(url_schema + "prevCondLst")
-    cond = etree.Element(url_schema + "cond", evt="onPrev", delay="0")
-    tgtEl = etree.Element(url_schema + "tgtEl")
-    sldTgt = etree.Element(url_schema + "sldTgt")
-    tgtEl.append(sldTgt)
-    cond.append(tgtEl)
-    prevCondLst.append(cond)
-    seq.append(prevCondLst)
-    pass
-
-
-def addNextCondLst(seq: etreeElementClass):
-    nextCondLst = etree.Element(url_schema + "nextCondLst")
-    cond = etree.Element(url_schema + "cond", evt="onNext", delay="0")
-    tgtEl = etree.Element(url_schema + "tgtEl")
-    sldTgt = etree.Element(url_schema + "sldTgt")
-    tgtEl.append(sldTgt)
-    cond.append(tgtEl)
-    nextCondLst.append(cond)
-    seq.append(nextCondLst)
-    pass
-
-
-def addToFrontEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict, i: int,
-                     childTnLst: etreeElementClass):
-    par = etree.Element(url_schema + "par")
-    cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
-    stCondLst = etree.Element(url_schema + "stCondLst")
-    cond = etree.Element(url_schema + "cond", delay=str(currentdelay))
-    stCondLst.append(cond)
-    cTn.append(stCondLst)
-
-    innerchildTnLst = etree.Element(url_schema + "childTnLst")
-    innerPar = etree.Element(url_schema + "par")
-    innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), presetID="1", presetClass="entr",
-                             presetSubtype="0", fill="hold", nodeType="withEffect" if i == 0 else "afterEffect")
-    innerstCondLst = etree.Element(url_schema + "stCondLst")
-    innercond = etree.Element(url_schema + "cond", delay="0")
-    innerstCondLst.append(innercond)
-    innercTn.append(innerstCondLst)
-
-    innerInnerChildTnLst = etree.Element(url_schema + "childTnLst")
-    innercTn.append(innerInnerChildTnLst)
-
-    setElement = etree.Element(url_schema + "set")
-    cBhvr = etree.Element(url_schema + "cBhvr")
-
-    cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="1", fill="hold")
-    cBhvrcTnstCondLst = etree.Element(url_schema + "stCondLst")
-    cBhvrcTncond = etree.Element(url_schema + "cond", delay="0")
-    cBhvrcTnstCondLst.append(cBhvrcTncond)
-    cBhvrcTn.append(cBhvrcTnstCondLst)
-    cBhvr.append(cBhvrcTn)
-    tgtEl = etree.Element(url_schema + "tgtEl")
-    spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
-    tgtEl.append(spTgt)
-    cBhvr.append(tgtEl)
-    attrNameLst = etree.Element(url_schema + "attrNameLst")
-    attrName = etree.Element(url_schema + "attrName")
-    attrName.text = "style.visibility"
-    attrNameLst.append(attrName)
-    cBhvr.append(attrNameLst)
-
-    setElement.append(cBhvr)
-    to = etree.Element(url_schema + "to")
-    strVal = etree.Element(url_schema + "strVal", val="visible")
-    to.append(strVal)
-    setElement.append(to)
-
-    innerInnerChildTnLst.append(setElement)
-
-    innerPar.append(innercTn)
-    innerchildTnLst.append(innerPar)
-    cTn.append(innerchildTnLst)
-
-    par.append(cTn)
-    childTnLst.append(par)
-    pass
-
-
-def addToBackEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict, childTnLst: etreeElementClass):
-    par = etree.Element(url_schema + "par")
-    cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
-    stCondLst = etree.Element(url_schema + "stCondLst")
-    cond = etree.Element(url_schema + "cond", delay=str(currentdelay))
-    stCondLst.append(cond)
-    cTn.append(stCondLst)
-
-    innerchildTnLst = etree.Element(url_schema + "childTnLst")
-    innerPar = etree.Element(url_schema + "par")
-    innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), presetID="1", presetClass="exit",
-                             presetSubtype="0", fill="hold", nodeType="afterEffect")
-    innerstCondLst = etree.Element(url_schema + "stCondLst")
-    innercond = etree.Element(url_schema + "cond", delay="0")
-    innerstCondLst.append(innercond)
-    innercTn.append(innerstCondLst)
-
-    innerInnerChildTnLst = etree.Element(url_schema + "childTnLst")
-    innercTn.append(innerInnerChildTnLst)
-
-    setElement = etree.Element(url_schema + "set")
-    cBhvr = etree.Element(url_schema + "cBhvr")
-
-    cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="1", fill="hold")
-    cBhvrcTnstCondLst = etree.Element(url_schema + "stCondLst")
-    cBhvrcTncond = etree.Element(url_schema + "cond", delay="0")
-    cBhvrcTnstCondLst.append(cBhvrcTncond)
-    cBhvrcTn.append(cBhvrcTnstCondLst)
-    cBhvr.append(cBhvrcTn)
-    tgtEl = etree.Element(url_schema + "tgtEl")
-    spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
-    tgtEl.append(spTgt)
-    cBhvr.append(tgtEl)
-    attrNameLst = etree.Element(url_schema + "attrNameLst")
-    attrName = etree.Element(url_schema + "attrName")
-    attrName.text = "style.visibility"
-    attrNameLst.append(attrName)
-    cBhvr.append(attrNameLst)
-
-    setElement.append(cBhvr)
-    to = etree.Element(url_schema + "to")
-    strVal = etree.Element(url_schema + "strVal", val="hidden")
-    to.append(strVal)
-    setElement.append(to)
-
-    innerInnerChildTnLst.append(setElement)
-
-    cmd = etree.Element(url_schema + "cmd", type="call", cmd="stop")
-    cBhvr = etree.Element(url_schema + "cBhvr")
-    cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="1", fill="hold")
-    cBhvrcTnstCondLst = etree.Element(url_schema + "stCondLst")
-    cBhvrcTnstCondLstCond = etree.Element(url_schema + "cond", delay="0")
-    cBhvrcTnstCondLst.append(cBhvrcTnstCondLstCond)
-    cBhvrcTn.append(cBhvrcTnstCondLst)
-    cBhvr.append(cBhvrcTn)
-    tgtEl = etree.Element(url_schema + "tgtEl")
-    spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
-    tgtEl.append(spTgt)
-    cBhvr.append(tgtEl)
-    cmd.append(cBhvr)
-
-    innerInnerChildTnLst.append(cmd)
-
-    innerPar.append(innercTn)
-    innerchildTnLst.append(innerPar)
-    cTn.append(innerchildTnLst)
-
-    par.append(cTn)
-    childTnLst.append(par)
-    pass
-
-
-def playEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict, childTnLst: etreeElementClass):
-    par = etree.Element(url_schema + "par")
-    cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
-    stCondLst = etree.Element(url_schema + "stCondLst")
-    cond = etree.Element(url_schema + "cond", delay=str(currentdelay))
-    stCondLst.append(cond)
-    cTn.append(stCondLst)
-
-    innerchildTnLst = etree.Element(url_schema + "childTnLst")
-    innerPar = etree.Element(url_schema + "par")
-    innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), presetID="1", presetClass="mediacall",
-                             presetSubtype="0", fill="hold", nodeType="afterEffect")
-    innerstCondLst = etree.Element(url_schema + "stCondLst")
-    innercond = etree.Element(url_schema + "cond", delay="0")
-    innerstCondLst.append(innercond)
-    innercTn.append(innerstCondLst)
-
-    innerInnerChildTnLst = etree.Element(url_schema + "childTnLst")
-    innercTn.append(innerInnerChildTnLst)
-
-    cmd = etree.Element(url_schema + "cmd", type="call", cmd="playFrom(0.0)")
-    cBhvr = etree.Element(url_schema + "cBhvr")
-    cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur=str(image_dict["dur"]), fill="hold")
-    cBhvr.append(cBhvrcTn)
-    tgtEl = etree.Element(url_schema + "tgtEl")
-    spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
-    tgtEl.append(spTgt)
-    cBhvr.append(tgtEl)
-    cmd.append(cBhvr)
-
-    innerInnerChildTnLst.append(cmd)
-
-    innerPar.append(innercTn)
-    innerchildTnLst.append(innerPar)
-    cTn.append(innerchildTnLst)
-
-    par.append(cTn)
-    childTnLst.append(par)
-    pass
 
 
 # Quick and dirty implementation, copying most of PPTXScene from manim_pptx
@@ -487,25 +255,25 @@ class PPTXScene(manim.Scene):
                 outerchildTnLst = slide.element[2][0][0][0][0]
 
                 if tslide["autonext"]:
-                    addAutoNext(slide)
+                    self.addAutoNext(slide)
                     outerchildTnLst = slide.element[3][0][0][0][0]
 
                 seq = etree.Element(url_schema + "seq", concurrent="1", nextAc="seek")
                 outerchildTnLst.insert(0, seq)
 
                 cTnIDCounter = itertools.count(2)
-                childTnLst = addCTn(cTnIDCounter, tslide, pics, seq)
+                childTnLst = self.addCTn(cTnIDCounter, tslide, pics, seq)
 
-                addPrevCondLst(seq)
-                addNextCondLst(seq)
+                self.addPrevCondLst(seq)
+                self.addNextCondLst(seq)
 
                 currentdelay = 0
                 for i, pic in enumerate(pics):
-                    addToFrontEffect(cTnIDCounter, currentdelay, pic, i, childTnLst)
-                    playEffect(cTnIDCounter, currentdelay, pic, childTnLst)
+                    self.addToFrontEffect(cTnIDCounter, currentdelay, pic, i, childTnLst)
+                    self.playEffect(cTnIDCounter, currentdelay, pic, childTnLst)
                     currentdelay += pic["dur"]
                     if i + 1 != len(pics):  # or tslide["type"] == "loop":
-                        addToBackEffect(cTnIDCounter, currentdelay, pic, childTnLst)
+                        self.addToBackEffect(cTnIDCounter, currentdelay, pic, childTnLst)
                         pass
                     pass
 
@@ -570,7 +338,7 @@ class PPTXScene(manim.Scene):
                 }
 
                 if offset_animation_index or tslide["autonext"]:
-                    addAutoNext(slide)
+                    self.addAutoNext(slide)
                     outerchildTnLst = slide.element[3][0][0][0][0]
                 else:
                     outerchildTnLst = slide.element[2][0][0][0][0]
@@ -588,13 +356,13 @@ class PPTXScene(manim.Scene):
                     logger.warning("looping slides are not allowed for multi-rendered presentations. "
                                    "Slide type has been changed to non-looping slide.")
                     pass
-                childTnLst = addCTn(cTnIDCounter, tslide, [], seq)
-                addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
-                addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
+                childTnLst = self.addCTn(cTnIDCounter, tslide, [], seq)
+                self.addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
+                self.addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
 
                 # Add effect to play the animation, starting immediately
                 currentdelay = 0
-                playEffect(cTnIDCounter, currentdelay, image_dict, childTnLst)
+                self.playEffect(cTnIDCounter, currentdelay, image_dict, childTnLst)
 
                 # No idea what this part is doing...
                 #   This makes it so the slide show goes smoothly onto the end-show slide (and possibly others)
@@ -678,7 +446,7 @@ class PPTXScene(manim.Scene):
                 "dur": PPTXScene.get_dur(slide_movie_file),
             }
             if tslide["autonext"]:
-                addAutoNext(slide)
+                self.addAutoNext(slide)
                 outerchildTnLst = slide.element[3][0][0][0][0]
                 pass
             else:
@@ -692,13 +460,13 @@ class PPTXScene(manim.Scene):
             seq = etree.Element(url_schema + "seq", concurrent="1", nextAc="seek")
             outerchildTnLst.insert(0, seq)
             cTnIDCounter = itertools.count(2)  # Some sort of counter
-            childTnLst = addCTn(cTnIDCounter, tslide, [image_dict], seq)
-            addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
-            addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
+            childTnLst = self.addCTn(cTnIDCounter, tslide, [image_dict], seq)
+            self.addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
+            self.addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
 
             # Add effect to play the animation, starting immediately
             currentdelay = 0
-            playEffect(cTnIDCounter, currentdelay, image_dict, childTnLst)
+            self.playEffect(cTnIDCounter, currentdelay, image_dict, childTnLst)
 
             # No idea what this part is doing...
             #   I think this makes it so the slide show goes smoothly onto the end-show slide (and possibly others)
@@ -767,7 +535,7 @@ class PPTXScene(manim.Scene):
                 "dur": PPTXScene.get_dur(slide_movie_file),
             }
             if tslide["autonext"]:
-                addAutoNext(slide)
+                self.addAutoNext(slide)
                 outerchildTnLst = slide.element[3][0][0][0][0]
                 pass
             else:
@@ -781,13 +549,13 @@ class PPTXScene(manim.Scene):
             seq = etree.Element(url_schema + "seq", concurrent="1", nextAc="seek")
             outerchildTnLst.insert(0, seq)
             cTnIDCounter = itertools.count(2)  # Some sort of counter
-            childTnLst = addCTn(cTnIDCounter, tslide, [image_dict], seq)
-            addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
-            addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
+            childTnLst = self.addCTn(cTnIDCounter, tslide, [image_dict], seq)
+            self.addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
+            self.addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
 
             # Add effect to play the animation, starting immediately
             currentdelay = 0
-            playEffect(cTnIDCounter, currentdelay, image_dict, childTnLst)
+            self.playEffect(cTnIDCounter, currentdelay, image_dict, childTnLst)
 
             # No idea what this part is doing...
             #   I think this makes it so the slide show goes smoothly onto the end-show slide (and possibly others)
@@ -800,6 +568,243 @@ class PPTXScene(manim.Scene):
         prs.save(presentation_path)
         logger.log(PPTX_INFO, f'PowerPoint written to: {presentation_name} in {self.output_folder}')
         # print(self.renderer.file_writer.partial_movie_directory)
+        pass
+
+    # static methods for controlling slide animations, transitions, and other components.
+    #   see https://python-pptx.readthedocs.io/en/latest/dev/analysis/shp-movie.html for more information
+
+    # TODO (2023-03-06 @ 10:30:19): Convert these to a class of their own (this should make it more OOP)
+
+    @staticmethod
+    def addAutoNext(slide: pptx.slide.Slide):
+        transition = etree.Element(url_schema + "transition", {
+            "spd": "slow",
+            "advTm": "0",
+        })
+        slide.element.insert(2, transition)
+        pass
+
+    @staticmethod
+    def addCTn(cTnIDCounter: itertools.count, tslide: dict, pics: list, seq: etreeElementClass):
+        innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="indefinite", nodeType="mainSeq")
+        childTnLst = etree.Element(url_schema + "childTnLst")
+        par1 = etree.Element(url_schema + "par")
+        cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
+        if tslide["type"] == "loop":
+            cTn.attrib["dur"] = str(reduce(lambda x, y: x + y, [p["dur"] for p in pics]))
+            cTn.attrib["repeatCount"] = "indefinite"
+        stCondLst = etree.Element(url_schema + "stCondLst")
+        cond1 = etree.Element(url_schema + "cond", delay="indefinite")
+        cond2 = etree.Element(url_schema + "cond", evt="onBegin", delay="0")
+        cond2tn = etree.Element(url_schema + "tn", val="2")
+        cond2.append(cond2tn)
+        stCondLst.append(cond1)
+        stCondLst.append(cond2)
+        cTn.append(stCondLst)
+        childTnLst2 = etree.Element(url_schema + "childTnLst")
+        cTn.append(childTnLst2)
+
+        par1.append(cTn)
+        childTnLst.append(par1)
+        innercTn.append(childTnLst)
+        seq.append(innercTn)
+        return childTnLst2
+
+    @staticmethod
+    def addPrevCondLst(seq: etreeElementClass):
+        prevCondLst = etree.Element(url_schema + "prevCondLst")
+        cond = etree.Element(url_schema + "cond", evt="onPrev", delay="0")
+        tgtEl = etree.Element(url_schema + "tgtEl")
+        sldTgt = etree.Element(url_schema + "sldTgt")
+        tgtEl.append(sldTgt)
+        cond.append(tgtEl)
+        prevCondLst.append(cond)
+        seq.append(prevCondLst)
+        pass
+
+    @staticmethod
+    def addNextCondLst(seq: etreeElementClass):
+        nextCondLst = etree.Element(url_schema + "nextCondLst")
+        cond = etree.Element(url_schema + "cond", evt="onNext", delay="0")
+        tgtEl = etree.Element(url_schema + "tgtEl")
+        sldTgt = etree.Element(url_schema + "sldTgt")
+        tgtEl.append(sldTgt)
+        cond.append(tgtEl)
+        nextCondLst.append(cond)
+        seq.append(nextCondLst)
+        pass
+
+    @staticmethod
+    def addToFrontEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict, i: int,
+                         childTnLst: etreeElementClass):
+        par = etree.Element(url_schema + "par")
+        cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
+        stCondLst = etree.Element(url_schema + "stCondLst")
+        cond = etree.Element(url_schema + "cond", delay=str(currentdelay))
+        stCondLst.append(cond)
+        cTn.append(stCondLst)
+
+        innerchildTnLst = etree.Element(url_schema + "childTnLst")
+        innerPar = etree.Element(url_schema + "par")
+        innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), presetID="1", presetClass="entr",
+                                 presetSubtype="0", fill="hold", nodeType="withEffect" if i == 0 else "afterEffect")
+        innerstCondLst = etree.Element(url_schema + "stCondLst")
+        innercond = etree.Element(url_schema + "cond", delay="0")
+        innerstCondLst.append(innercond)
+        innercTn.append(innerstCondLst)
+
+        innerInnerChildTnLst = etree.Element(url_schema + "childTnLst")
+        innercTn.append(innerInnerChildTnLst)
+
+        setElement = etree.Element(url_schema + "set")
+        cBhvr = etree.Element(url_schema + "cBhvr")
+
+        cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="1", fill="hold")
+        cBhvrcTnstCondLst = etree.Element(url_schema + "stCondLst")
+        cBhvrcTncond = etree.Element(url_schema + "cond", delay="0")
+        cBhvrcTnstCondLst.append(cBhvrcTncond)
+        cBhvrcTn.append(cBhvrcTnstCondLst)
+        cBhvr.append(cBhvrcTn)
+        tgtEl = etree.Element(url_schema + "tgtEl")
+        spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
+        tgtEl.append(spTgt)
+        cBhvr.append(tgtEl)
+        attrNameLst = etree.Element(url_schema + "attrNameLst")
+        attrName = etree.Element(url_schema + "attrName")
+        attrName.text = "style.visibility"
+        attrNameLst.append(attrName)
+        cBhvr.append(attrNameLst)
+
+        setElement.append(cBhvr)
+        to = etree.Element(url_schema + "to")
+        strVal = etree.Element(url_schema + "strVal", val="visible")
+        to.append(strVal)
+        setElement.append(to)
+
+        innerInnerChildTnLst.append(setElement)
+
+        innerPar.append(innercTn)
+        innerchildTnLst.append(innerPar)
+        cTn.append(innerchildTnLst)
+
+        par.append(cTn)
+        childTnLst.append(par)
+        pass
+
+    @staticmethod
+    def addToBackEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict,
+                        childTnLst: etreeElementClass):
+        par = etree.Element(url_schema + "par")
+        cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
+        stCondLst = etree.Element(url_schema + "stCondLst")
+        cond = etree.Element(url_schema + "cond", delay=str(currentdelay))
+        stCondLst.append(cond)
+        cTn.append(stCondLst)
+
+        innerchildTnLst = etree.Element(url_schema + "childTnLst")
+        innerPar = etree.Element(url_schema + "par")
+        innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), presetID="1", presetClass="exit",
+                                 presetSubtype="0", fill="hold", nodeType="afterEffect")
+        innerstCondLst = etree.Element(url_schema + "stCondLst")
+        innercond = etree.Element(url_schema + "cond", delay="0")
+        innerstCondLst.append(innercond)
+        innercTn.append(innerstCondLst)
+
+        innerInnerChildTnLst = etree.Element(url_schema + "childTnLst")
+        innercTn.append(innerInnerChildTnLst)
+
+        setElement = etree.Element(url_schema + "set")
+        cBhvr = etree.Element(url_schema + "cBhvr")
+
+        cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="1", fill="hold")
+        cBhvrcTnstCondLst = etree.Element(url_schema + "stCondLst")
+        cBhvrcTncond = etree.Element(url_schema + "cond", delay="0")
+        cBhvrcTnstCondLst.append(cBhvrcTncond)
+        cBhvrcTn.append(cBhvrcTnstCondLst)
+        cBhvr.append(cBhvrcTn)
+        tgtEl = etree.Element(url_schema + "tgtEl")
+        spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
+        tgtEl.append(spTgt)
+        cBhvr.append(tgtEl)
+        attrNameLst = etree.Element(url_schema + "attrNameLst")
+        attrName = etree.Element(url_schema + "attrName")
+        attrName.text = "style.visibility"
+        attrNameLst.append(attrName)
+        cBhvr.append(attrNameLst)
+
+        setElement.append(cBhvr)
+        to = etree.Element(url_schema + "to")
+        strVal = etree.Element(url_schema + "strVal", val="hidden")
+        to.append(strVal)
+        setElement.append(to)
+
+        innerInnerChildTnLst.append(setElement)
+
+        cmd = etree.Element(url_schema + "cmd", type="call", cmd="stop")
+        cBhvr = etree.Element(url_schema + "cBhvr")
+        cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur="1", fill="hold")
+        cBhvrcTnstCondLst = etree.Element(url_schema + "stCondLst")
+        cBhvrcTnstCondLstCond = etree.Element(url_schema + "cond", delay="0")
+        cBhvrcTnstCondLst.append(cBhvrcTnstCondLstCond)
+        cBhvrcTn.append(cBhvrcTnstCondLst)
+        cBhvr.append(cBhvrcTn)
+        tgtEl = etree.Element(url_schema + "tgtEl")
+        spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
+        tgtEl.append(spTgt)
+        cBhvr.append(tgtEl)
+        cmd.append(cBhvr)
+
+        innerInnerChildTnLst.append(cmd)
+
+        innerPar.append(innercTn)
+        innerchildTnLst.append(innerPar)
+        cTn.append(innerchildTnLst)
+
+        par.append(cTn)
+        childTnLst.append(par)
+        pass
+
+    @staticmethod
+    def playEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict,
+                   childTnLst: etreeElementClass):
+        par = etree.Element(url_schema + "par")
+        cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
+        stCondLst = etree.Element(url_schema + "stCondLst")
+        cond = etree.Element(url_schema + "cond", delay=str(currentdelay))
+        stCondLst.append(cond)
+        cTn.append(stCondLst)
+
+        innerchildTnLst = etree.Element(url_schema + "childTnLst")
+        innerPar = etree.Element(url_schema + "par")
+        innercTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), presetID="1", presetClass="mediacall",
+                                 presetSubtype="0", fill="hold", nodeType="afterEffect")
+        innerstCondLst = etree.Element(url_schema + "stCondLst")
+        innercond = etree.Element(url_schema + "cond", delay="0")
+        innerstCondLst.append(innercond)
+        innercTn.append(innerstCondLst)
+
+        innerInnerChildTnLst = etree.Element(url_schema + "childTnLst")
+        innercTn.append(innerInnerChildTnLst)
+
+        cmd = etree.Element(url_schema + "cmd", type="call", cmd="playFrom(0.0)")
+        cBhvr = etree.Element(url_schema + "cBhvr")
+        cBhvrcTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), dur=str(image_dict["dur"]),
+                                 fill="hold")
+        cBhvr.append(cBhvrcTn)
+        tgtEl = etree.Element(url_schema + "tgtEl")
+        spTgt = etree.Element(url_schema + "spTgt", spid=str(image_dict["id"]))
+        tgtEl.append(spTgt)
+        cBhvr.append(tgtEl)
+        cmd.append(cBhvr)
+
+        innerInnerChildTnLst.append(cmd)
+
+        innerPar.append(innercTn)
+        innerchildTnLst.append(innerPar)
+        cTn.append(innerchildTnLst)
+
+        par.append(cTn)
+        childTnLst.append(par)
         pass
 
     pass
@@ -848,7 +853,7 @@ if __name__ == '__main__':
         }
 
         if offset_animation_index_t:  # or tslide["autonext"]:
-            addAutoNext(slide_t)
+            PPTXScene.addAutoNext(slide_t)
             outerchildTnLst_t = slide_t.element[3][0][0][0][0]
         else:
             outerchildTnLst_t = slide_t.element[2][0][0][0][0]
@@ -862,13 +867,13 @@ if __name__ == '__main__':
 
         cTnIDCounter_t = itertools.count(2)  # Some sort of counter
         tslide_t = {"type": "slide"}  # Assign the slide for this test
-        childTnLst_t = addCTn(cTnIDCounter_t, tslide_t, [image_dict_t], seq_t)
-        addPrevCondLst(seq_t)  # Allows individual animation slide to be reviewed without automatically advancing
-        addNextCondLst(seq_t)  # Removes necessity for a trigger for videos (animations)
+        childTnLst_t = PPTXScene.addCTn(cTnIDCounter_t, tslide_t, [image_dict_t], seq_t)
+        PPTXScene.addPrevCondLst(seq_t)  # Allows individual animation slide review without automatically advancing
+        PPTXScene.addNextCondLst(seq_t)  # Removes necessity for a trigger for videos (animations)
 
         # Add effect to play the animation, starting immediately
         currentdelay_t = 0
-        playEffect(cTnIDCounter_t, currentdelay_t, image_dict_t, childTnLst_t)
+        PPTXScene.playEffect(cTnIDCounter_t, currentdelay_t, image_dict_t, childTnLst_t)
 
         # No idea what this part is doing...
         #   This makes it so the slide show goes smoothly onto the end-show slide (and possibly others)
