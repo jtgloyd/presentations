@@ -123,6 +123,10 @@ class PPTXScene(manim.Scene):
         pass
 
     def endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
+        # TODO (2023-03-11 @ 09:47:34): Add a "quick=False" keyword argument that, when true, will, for the slide, set
+        #  the _wait_override_ to a small value (~0.2), then set the wait time back to the original _wait_override_,
+        #  and prepend a "(QUICK)" tag to the notes
+        #  OR it might be better for this to go in the Slide.setup method
         logger.log(PPTX_INFO,
                    f"End slide: {self.currentSlide} with animations "
                    f"[{self.slideStartAnimation},  {self.currentAnimation}]")
@@ -500,11 +504,11 @@ class PPTXScene(manim.Scene):
             pass
 
         # TODO (2023-03-03 @ 07:49:59): DOCUMENT!!!
-        super(PPTXScene, self).render(*args, **kwargs)
         if not os.path.exists(self.output_folder):
             os.mkdir(self.output_folder)
         if not os.path.exists(self.temporary_dir):
             os.mkdir(self.temporary_dir)
+        super(PPTXScene, self).render(*args, **kwargs)
         logger.log(PPTX_INFO, "Creating PPTX")
 
         # open/load-in template presentation
