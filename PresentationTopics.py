@@ -42,6 +42,11 @@ from .PPTXScene import PPTXScene
 #  of manim_pptx.PPTXScene or other slide show scene options. AND make it so the classes inherited from must have
 #  certain methods implemented, similar to ABC meta classes.
 
+# TODO (2023-03-12 @ 10:26:11): Another way to improve this is by having the first frame of a slide's animation as the
+#  background, then layer videos on top of one another, with their first frame set transparent via alpha channel, and
+#  the foreground would be the next slide's first frame that has an "appear" animation at the end of the slide.  That
+#  *should* allow us to put multiple animations with triggers on a single slide
+
 
 LiveTemplateInstructionsForSlide = r'''
 In order to get a live template for pycharm, go 
@@ -407,7 +412,35 @@ class Slide:
     def __coreSetup__(self, owner, *args, **kwargs):
         # TODO (2023-03-11 @ 19:12:15): deprecate "off" and use a __off__ method instead of having repeated lines
         #  in the slide setup descriptor
-        if not kwargs.get('on', True):
+
+        # Get default keyword argument values from the setupFunction
+        #           Reference:  https://docs.python.org/3/library/inspect.html
+        setup_defaults = dict()
+        if self.setupFunction is not None:
+            # number of arguments (not including keyword only arguments, * or ** args)
+            #       References: https://stackoverflow.com/a/73602293
+            #                   https://python-reference.readthedocs.io/en/latest/docs/code/argcount.html
+            arg_count = self.setupFunction.__code__.co_argcount
+            # number of default arguments
+            #       References: https://stackoverflow.com/a/17534006
+            #                   https://peps.python.org/pep-3102/
+            default_arg_count = len(self.setupFunction.__defaults__)
+
+            # set the defaults for non-keyword only arguments as obtained from the function properties
+            setup_defaults = dict(zip(self.setupFunction.__code__.co_varnames[arg_count - default_arg_count:],
+                                      self.setupFunction.__defaults__))
+
+            # update with keyword only arguments (if they exist)
+            #       References: https://stackoverflow.com/a/17534006
+            #                   https://peps.python.org/pep-3102/
+            if self.setupFunction.__kwdefaults__ is not None:
+                setup_defaults.update(self.setupFunction.__kwdefaults__)
+                pass
+            pass
+        # update the acquired arguments with any specified from the function call
+        setup_defaults.update(kwargs)
+
+        if not setup_defaults.get('on', True):
             self.off()
             pass
         pass
