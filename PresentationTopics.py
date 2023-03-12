@@ -1,4 +1,5 @@
 # from manim_pptx import PPTXScene
+import itertools
 import warnings
 import typing
 import types
@@ -146,6 +147,16 @@ class Topic(PPTXScene):
 
     @typing.final
     def construct(self):
+        # Need to set up previous topics in case of dependence on positions
+        for topic in itertools.takewhile(self.__negated_subclasscheck__, Topic.__subclasses__()):
+            logger.log(TOPIC_INFO, f'Running setup for {topic.__name__} from {self}')
+            # Run global setup from topic
+            topic.setup(self)
+            # Get slides from topic
+            slides = list(topic.__get_slides__())
+            # Run slide setup from topic
+            topic.slideSetup(self, slides=slides)
+            pass
         logger.log(TOPIC_INFO, f'Constructing {self.__class__.__name__}.')
         slides = list(self.__get_slides__())
         self.slideSetup(slides=slides)
@@ -247,6 +258,10 @@ class Topic(PPTXScene):
             slide.setupProtocol(self)
             pass
         pass
+
+    @classmethod
+    def __negated_subclasscheck__(cls, subclass):
+        return not cls.__subclasscheck__(subclass)
 
     pass
 
@@ -389,6 +404,14 @@ class Slide:
         self.__on__ = not off
         pass
 
+    def __coreSetup__(self, owner, *args, **kwargs):
+        # TODO (2023-03-11 @ 19:12:15): deprecate "off" and use a __off__ method instead of having repeated lines
+        #  in the slide setup descriptor
+        if not kwargs.get('on', True):
+            self.off()
+            pass
+        pass
+
     def setup(self, setupFunction: types.FunctionType):
         """ Descriptor to change the setup function for the slide. """
         self.setupFunction = setupFunction
@@ -404,6 +427,7 @@ class Slide:
         pass
 
     def setupProtocol(self, owner, *args, **kwargs):
+        self.__coreSetup__(owner, *args, **kwargs)
         if self.setupFunction is not None:
             logger.log(TOPIC_INFO, f'Executing slide "{self.name}" setup.')
             return self.setupFunction(owner, self, *args, **kwargs)
