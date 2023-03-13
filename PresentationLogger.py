@@ -7,6 +7,10 @@ import warnings
 
 TOPIC_INFO = 17
 logging.addLevelName(TOPIC_INFO, 'TOPIC')
+TOPIC_DEBUG = 12
+logging.addLevelName(TOPIC_DEBUG, 'TPC_DBG')
+TOPIC_WARNING = 29
+logging.addLevelName(TOPIC_WARNING, 'TPC_WRN')
 PPTX_INFO = 15
 logging.addLevelName(PPTX_INFO, 'PPTX_INF')
 PPTX_DEBUG = 11
