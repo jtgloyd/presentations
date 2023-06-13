@@ -1,5 +1,11 @@
+__all__ = [
+    "Topic",
+    "Slide",
+]
+
 # from manim_pptx import PPTXScene
 import itertools
+import time
 import warnings
 import typing
 import types
@@ -10,7 +16,7 @@ import os
 if __name__ == '__main__':
     __package__ = "presentations"
     pass
-from .PresentationLogger import logger, TOPIC_INFO
+from .PresentationLogger import logger, TOPIC_INFO, TOPIC_DEBUG, TOPIC_WARNING
 from .PPTXScene import PPTXScene
 
 # TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single
@@ -47,6 +53,23 @@ from .PPTXScene import PPTXScene
 #  the foreground would be the next slide's first frame that has an "appear" animation at the end of the slide.  That
 #  *should* allow us to put multiple animations with triggers on a single slide
 
+# TODO (2023-03-13 @ 16:29:59): Make other Topics within the same script "inherit" the previous Topic's "end state"
+#  (maybe check out "play_internal" for ideas how to do this)
+
+# TODO (2023-05-07 @ 09:06:32): ADD UNIT TESTS!!!!!
+
+# TODO (2023-05-09 @ 19:32:21): Automatically trim indent spaces in notes so we can use the triple quotes without
+#  un-indenting every line
+#   DONE (2023-05-23 @ 12:47:58): by PPTXScene.__process_notes__
+
+# TODO (2023-05-12 @ 09:59:46): Create a pyi file for all classes and modules in this package
+
+# TODO (2023-05-22 @ 12:32:00): When autonext=True, we should combine the two slides together (if applicable) since
+#  teams presentations can't use autonext
+
+# TODO (2023-05-24 @ 09:50:44): Change the creation of the slide show to insert the videos into the content section of
+#  a "content only" slide, that way the format/layout of the slides can be changed easily by editing the format/layout
+#  of a single master slide
 
 LiveTemplateInstructionsForSlide = r'''
 In order to get a live template for pycharm, go 
@@ -136,6 +159,8 @@ Then change the "Applicable in" context to
 Python: Top-level
 '''
 
+# TODO (2023-06-13 @ 16:58:06): Move the above instructions to the Constants.py file
+
 
 class Topic(PPTXScene):
     """All slides should be divided, in order, into methods that implement the @Slide decorator class.
@@ -152,16 +177,7 @@ class Topic(PPTXScene):
 
     @typing.final
     def construct(self):
-        # Need to set up previous topics in case of dependence on positions
-        for topic in itertools.takewhile(self.__negated_subclasscheck__, Topic.__subclasses__()):
-            logger.log(TOPIC_INFO, f'Running setup for {topic.__name__} from {self}')
-            # Run global setup from topic
-            topic.setup(self)
-            # Get slides from topic
-            slides = list(topic.__get_slides__())
-            # Run slide setup from topic
-            topic.slideSetup(self, slides=slides)
-            pass
+        self.__setup_dependencies__()
         logger.log(TOPIC_INFO, f'Constructing {self.__class__.__name__}.')
         slides = list(self.__get_slides__())
         self.slideSetup(slides=slides)
@@ -198,6 +214,33 @@ class Topic(PPTXScene):
             pass
         pass
 
+    def __setup_dependencies__(self):
+        # Need to set up previous topics in case of dependence on positions
+        for topic in itertools.takewhile(self.__negated_subclasscheck__, Topic.__subclasses__()):
+            logger.log(TOPIC_INFO, f'Running dependency setup for {topic.__name__} from {self}')
+            # Run global setup from topic
+            topic.setup(self)
+            # Get slides from topic, excluding slides that are marked with "skip_dependence=True"
+            #                        (usually because they are too expensive)
+            slide_options = {slide: slide.setup_defaults for slide in topic.__get_slides__()}
+            # slides = [slide for slide, options in slide_options.items()
+            #           if not options.get('skip_dependence', False)]
+            slides = []
+            for slide, options in slide_options.items():
+                if not options.get('skip_dependence', False):
+                    slides.append(slide)
+                    pass
+                else:
+                    logger.log(TOPIC_DEBUG, f'Dependency setup for {slide.name} in {topic.__name__} skipped because '
+                                            f'it is marked with "skip_dependence=True", this is to skip generating '
+                                            f'unnecessary dependencies for slides with long setup times.')
+                    pass
+                pass
+            # Run slide setup from topic
+            topic.slideSetup(self, slides=slides)
+            pass
+        pass
+
     def __get_instance_slides__(self):
         warnings.warn("The '__get_instance_slides__' method is deprecated, "
                       "use '__get_slides__' instead", DeprecationWarning, 2)
@@ -205,7 +248,7 @@ class Topic(PPTXScene):
         return filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
 
     @classmethod
-    def __get_slides__(cls):
+    def __get_slides__(cls) -> typing.Iterable["Slide"]:
         return filter(Slide.__instancecheck__, cls.__dict__.values())
 
     def wait(self, *args, **kwargs):
@@ -267,6 +310,14 @@ class Topic(PPTXScene):
     @classmethod
     def __negated_subclasscheck__(cls, subclass):
         return not cls.__subclasscheck__(subclass)
+
+    @classmethod
+    def build_command(cls):
+        # TODO (2023-05-09 @ 09:48:46): this should be a class-property
+        # TODO (2023-05-09 @ 09:48:18): use "inspect" module:
+        #  https://stackoverflow.com/a/697395
+        filename = ...
+        return f"manim -qm -p {filename} {cls.__name__}"
 
     pass
 
@@ -372,12 +423,14 @@ class Slide:
                 else:
                     inputDict = {}
             else:
-                raise ValueError(f"Code for constructing a slide indicated there should be a call to 'self.endSlide',\n"
-                                 f"but no valid calls were found when inspecting the function's binary.\n\n"
-                                 f"code:\n\t{self.code.co_code}\n"
-                                 f"consts:\n\t{self.code.co_consts}\n"
-                                 f"names:\n\t{self.code.co_names}\n"
-                                 f"varnames:\n\t{self.code.co_varnames}")
+                # raise ValueError(f"Code for constructing a slide indicated there should be a call to 'self.endSlide',\n"
+                #                  f"but no valid calls were found when inspecting the function's binary.\n\n"
+                #                  f"code:\n\t{self.code.co_code}\n"
+                #                  f"consts:\n\t{self.code.co_consts}\n"
+                #                  f"names:\n\t{self.code.co_names}\n"
+                #                  f"varnames:\n\t{self.code.co_varnames}")
+                warnings.warn("Can't find endSlide error, needs to be fixed.")
+                return
             # print(self.name, ':', inputDict)
 
             if 'notes' in inputDict:
@@ -413,6 +466,17 @@ class Slide:
         # TODO (2023-03-11 @ 19:12:15): deprecate "off" and use a __off__ method instead of having repeated lines
         #  in the slide setup descriptor
 
+        setup_defaults = self.setup_defaults
+        # update the acquired arguments with any specified from the function call
+        setup_defaults.update(kwargs)
+
+        if not setup_defaults.get('on', True):
+            self.off()
+            pass
+        pass
+
+    @property
+    def setup_defaults(self) -> dict:
         # Get default keyword argument values from the setupFunction
         #           Reference:  https://docs.python.org/3/library/inspect.html
         setup_defaults = dict()
@@ -437,21 +501,16 @@ class Slide:
                 setup_defaults.update(self.setupFunction.__kwdefaults__)
                 pass
             pass
-        # update the acquired arguments with any specified from the function call
-        setup_defaults.update(kwargs)
+        return setup_defaults
 
-        if not setup_defaults.get('on', True):
-            self.off()
-            pass
-        pass
-
-    def setup(self, setupFunction: types.FunctionType):
+    def setup(self, setupFunction: types.FunctionType) -> "Slide":
         """ Descriptor to change the setup function for the slide. """
         self.setupFunction = setupFunction
         return self
 
     def constructProtocol(self, owner, *args, **kwargs):
         if self.__on__:
+            # TODO (2023-03-13 @ 12:52:32): add "from {self.parent}" to this log message
             logger.log(TOPIC_INFO, f'Constructing slide "{self.name}".')
             return self.constructFunction(owner, *args, **kwargs)
         else:
@@ -460,14 +519,35 @@ class Slide:
         pass
 
     def setupProtocol(self, owner, *args, **kwargs):
+        t_start = time.perf_counter()
         self.__coreSetup__(owner, *args, **kwargs)
         if self.setupFunction is not None:
             logger.log(TOPIC_INFO, f'Executing slide "{self.name}" setup.')
-            return self.setupFunction(owner, self, *args, **kwargs)
+            result = self.setupFunction(owner, self, *args, **kwargs)
+            pass
         else:
             # log "no setup"
             logger.log(TOPIC_INFO, f'Setup for slide "{self.name}" skipped because it has no setup function.')
-        pass
+            result = None
+            pass
+        dt = time.perf_counter() - t_start
+
+        # TODO (2023-03-13 @ 15:06:43): Warn the user if the setup should be marked with "skip_dependence=True" to
+        #  save time.  This should also check to see if the setup elements were obtained from hashed components.
+        #  (i.e. because creating the latex components takes a while, but then they are saved)
+        # TODO (2023-05-12 @ 14:01:41): This should also check if the setup is being run for dependence OR being run
+        #  for the setup of the slide being created, because in the latter case, then dependence doesn't really matter
+        #  because all aspects of the setup are required and therefore in this case, this warning shouldn't be raised.
+        if dt > 1 and not self.setup_defaults.get('skip_dependence', False):
+            logger.log(TOPIC_WARNING, f'The setup for Slide decorated function {self.name} in '
+                                      f'{owner.__presentation_name__} is computationally expensive.  If there are no '
+                                      f'dependencies in this setup function for slides in other Topics, then consider '
+                                      f'adding "skip_dependence=True" to the setup function\'s arguments.  If there '
+                                      f'are dependencies in this setup, then consider adding exclusively the dependent '
+                                      f'components to the Topic\'s setup method.')
+            pass
+
+        return result
 
     # def __set_name__(self, owner, name):
     #     print(owner, name)

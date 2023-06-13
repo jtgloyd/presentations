@@ -1,8 +1,13 @@
+__all__ = [
+    "PPTXScene"
+]
+
 if __name__ == '__main__':
     __package__ = "presentations"
     pass
 from .PresentationLogger import logger, PPTX_INFO, PPTX_DEBUG, PPTX_WARNING
 
+import re
 import warnings
 import itertools
 import os
@@ -12,6 +17,7 @@ import pptx.slide
 import subprocess
 import lxml.etree as etree
 from functools import reduce
+from typing import List
 
 # noinspection PyProtectedMember
 etreeElementClass = etree._Element
@@ -43,13 +49,13 @@ etreeElementClass = etree._Element
 #  ~~~
 #  Instead, if I want to get it working with teams, I need to combine all the animations for a single slide into one
 #  video, then put it in a single slide.  Use the manim combination tool, look in manim.scene.scene_file_writer.py:553
-
+...
 # TODO (2023-03-04 @ 09:10:37): I can get the slides to show their end state by putting an image of the end state in
 #  the front of the slide (i.e. the next slide's start image) and then immediately removing the image once the slide
 #  starts.  This might be jittery though, so only do this if necessary.
 #  -> A better way to do this would be to "appear" the image in the front foreground AFTER the video completes (that
 #     way the image is there when viewing the slide in the deck, but not there when the animation is playing)
-
+...
 # Possible future issues:
 #   -There may still be issues with having to restart the slide show when presenting from desktop if the number of
 #   animations passes ~60-70, I don't know if this can be resolved.  (might be a good idea to automatically include a
@@ -59,13 +65,31 @@ etreeElementClass = etree._Element
 #   the slide into two animations when this happens)
 #   -There may also still be issues with MS Teams because I haven't tested it rigorously (though it seems to work fine
 #   from initial tests)
-
+...
+# TODO (2023-03-11 @ 10:40:13): Add "prenotes" and "endnotes" to endSlide method.
+#  "endnotes" should be a list of strings appended (in parentheses) to a new line on this slide's notes
+#  "prenotes" should also be a list of strings, each of which are appended (in parentheses) to a new line on the
+#       previous slide's notes (i.e. added to the previous slide's "endnotes")
+#  OR maybe add a "scripted" parameter.  The behavior I want to identify is to notify the presenter when the upcoming
+#  slide has been timed to align with key points in the script as it's included in the notes.
+#  EDIT: I should avoid timing key points during a presentation, its good for videos, but it's too much work and leaves
+#  too much room for errors.  Instead, key timings should be at the beginning of slides (or as close as possible),
+#  so they are triggered by advancing to the slide.
+...
+# TODO (2023-05-07 @ 09:55:34): Add the slide name to each slide as a "Title" by creating a new master slide format
+#  with the title outside of the viewing area (probably on above so the change in size doesn't move the title into the
+#  viewing area).  Then add the slide name as text to the title text box.
+...
 
 url_schema = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 
+not_preceded_pattern = re.compile(r'(?<![.!?]) {2,}', re.M)
+line_start_pattern = re.compile(r'^ ', re.M)
+
 
 # Quick and dirty implementation, copying most of PPTXScene from manim_pptx
-class PPTXScene(manim.Scene):
+class PPTXScene(manim.ThreeDScene):
+
     def __init__(self, *args, **kwargs):
         self.output_folder = kwargs.pop("output_folder", "./pptx/")
         self.temporary_dir = kwargs.pop("temporary_dir", "./temp/")
@@ -103,6 +127,10 @@ class PPTXScene(manim.Scene):
         # self.currentAnimation += 1
         pass
 
+    @staticmethod
+    def __process_notes__(notes: str):
+        return line_start_pattern.sub('', not_preceded_pattern.sub(' ', notes.strip()))
+
     def all_endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
         warnings.warn("The 'all_endSlide' method is deprecated, "
                       "use 'endSlide' instead", DeprecationWarning, 2)
@@ -114,7 +142,7 @@ class PPTXScene(manim.Scene):
             end=self.currentAnimation,
             number=self.currentSlide,
             autonext=autonext,
-            notes=notes,
+            notes=notes if notes is None else self.__process_notes__(notes),
             shownextnotes=shownextnotes,
         ))
         self.currentSlide += 1
@@ -136,7 +164,7 @@ class PPTXScene(manim.Scene):
             end=self.currentAnimation,
             number=self.currentSlide,
             autonext=autonext,
-            notes=notes,
+            notes=notes if notes is None else self.__process_notes__(notes),
             shownextnotes=shownextnotes,
         )
         slide_info.update(
@@ -148,6 +176,27 @@ class PPTXScene(manim.Scene):
         self.currentSlideAnimations = 0
         pass
 
+    @staticmethod
+    def __combinationHash__(slide_movie_files: List[str]):
+        # TODO (2023-03-12 @ 08:21:54): add timing and logging as seen in manim.utils.hashing.get_hash_from_play_call
+        max_hash_value = 2 ** 32
+        nl = '\n\t'
+        n_hash_values = 3
+
+        stripped_movie_files = [os.path.splitext(file)[0] for file in map(os.path.basename, slide_movie_files)]
+        split_movie_hashes = [tuple(map(int, movie_file.split('_'))) for movie_file in stripped_movie_files]
+        # make sure there are three hash values for each movie file
+        assert all(map(n_hash_values.__eq__, map(len, split_movie_hashes))), \
+            f'There must be {n_hash_values} hash values for every movie file.' \
+            f'\n\t{nl.join(stripped_movie_files)}'
+
+        hash_camera, hash_animations, hash_current_mobjects = (
+            hash(hash_tuple) // max_hash_value
+            for hash_tuple in zip(*split_movie_hashes)
+        )
+        hash_complete = f"{hash_camera}_{hash_animations}_{hash_current_mobjects}"
+        return hash_complete
+
     def __combineSlideAnimations__(self, slide_number: int, start_index: int, end_index: int):
         """Combine all animations for the slide into a single video."""
         slide_movie_files = self.renderer.file_writer.partial_movie_files[start_index:end_index]
@@ -155,8 +204,15 @@ class PPTXScene(manim.Scene):
         # TODO (2023-03-05 @ 11:40:39): hash combined video (just hash combination of the contributing video hashes)
         #  so it can be reused (although this barely takes any time once the component videos are made, so maybe
         #  don't bother)
+        #  ALSO need to make sure the number of combined videos isn't growing out of control when doing this
+        #       i.e. add a slide_# identifier and a self.__class__.__name__ identifier or some sort of other data to
+        #       help determine when one video should replace another
+        #       (or make it time based, at the end of the render sequence, excluding the videos used for this
+        #       particular presentation)
+        slide_hash = self.__combinationHash__(slide_movie_files)
         slide_movie_file = os.path.join(self.temporary_dir,
                                         f"slide_{slide_number}" +
+                                        # slide_hash +
                                         os.path.splitext(os.path.basename(first_movie_file))[1])
 
         # This is very messy, and should eventually use more of the components seen in
@@ -361,7 +417,8 @@ class PPTXScene(manim.Scene):
                                    "Slide type has been changed to non-looping slide.")
                     pass
                 childTnLst = self.addCTn(cTnIDCounter, tslide, [], seq)
-                self.addPrevCondLst(seq)  # Allows individual animation slide to be reviewed without automatically advancing
+                self.addPrevCondLst(
+                    seq)  # Allows individual animation slide to be reviewed without automatically advancing
                 self.addNextCondLst(seq)  # remove necessity for trigger for videos (animations)
 
                 # Add effect to play the animation, starting immediately
@@ -639,8 +696,9 @@ class PPTXScene(manim.Scene):
         pass
 
     @staticmethod
-    def addToFrontEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict, i: int,
-                         childTnLst: etreeElementClass):
+    def addToFrontEffect(
+            cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict, i: int,
+            childTnLst: etreeElementClass):
         par = etree.Element(url_schema + "par")
         cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
         stCondLst = etree.Element(url_schema + "stCondLst")
@@ -696,8 +754,9 @@ class PPTXScene(manim.Scene):
         pass
 
     @staticmethod
-    def addToBackEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict,
-                        childTnLst: etreeElementClass):
+    def addToBackEffect(
+            cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict,
+            childTnLst: etreeElementClass):
         par = etree.Element(url_schema + "par")
         cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
         stCondLst = etree.Element(url_schema + "stCondLst")
@@ -769,8 +828,9 @@ class PPTXScene(manim.Scene):
         pass
 
     @staticmethod
-    def playEffect(cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict,
-                   childTnLst: etreeElementClass):
+    def playEffect(
+            cTnIDCounter: itertools.count, currentdelay: int, image_dict: dict,
+            childTnLst: etreeElementClass):
         par = etree.Element(url_schema + "par")
         cTn = etree.Element(url_schema + "cTn", id=str(next(cTnIDCounter)), fill="hold")
         stCondLst = etree.Element(url_schema + "stCondLst")
@@ -887,4 +947,41 @@ if __name__ == '__main__':
         pass
 
     prs_t.save(os.path.join(output_folder_t, 'test.pptx'))
+    pass
+
+if __name__ == '__main__':
+    if __name__ == '__main__':
+        if __name__ == '__main__':
+            test_string = """\
+            Here is a test\
+            of a line not ended.
+
+            Here is a continued line.  Here is a new sentence.
+
+            Here is a line not ended.\
+            Here is a new sentence.
+            """
+            import re
+
+            # sentence_end = re.compile(r'\. {2,}')
+            # larger_space = re.compile(r' {2,}')
+            # not_preceded = re.compile(r'(?<![.!? ]) {2,}', re.M)
+            not_preceded = re.compile(r'(?<![.!?]) {2,}', re.M)
+            line_start = re.compile(r'^ ', re.M)
+            line_start.sub('', not_preceded.sub(' ', test_string))
+            pass
+
+        test_res = [re.compile(r'\u00a0'),
+                    re.compile(r'\u1680'),
+                    re.compile(r'[\u2000-\u200a]'),
+                    re.compile(r'\u2028'),
+                    re.compile(r'\u2029'),
+                    re.compile(r'\u202f'),
+                    re.compile(r'\u205f'),
+                    re.compile(r'\u3000'),
+                    re.compile(r'\ufeff'),
+                    re.compile(r' ')]
+        accepted = [r for r in test_res
+                    if r.match(' ')]
+        pass
     pass
