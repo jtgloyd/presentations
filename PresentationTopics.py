@@ -9,7 +9,6 @@ import time
 import warnings
 import typing
 import types
-import re
 import sys
 import os
 
@@ -35,27 +34,23 @@ from .PPTXScene import PPTXScene
 
 # TODO (2023-03-01 @ 11:30:33): Update live template instructions
 
-# TODO (2023-03-01 @ 11:30:50): Figure out how to get "All" class to re-use video and image resources from other topics
-
-# TODO (2023-03-01 @ 12:57:04): Figure out how to determine when the powerpoint needs to be restarted?
-
-# TODO (2023-03-04 @ 10:47:11): Figure out how to enforce Topic to inherit from different classes, i.e. to enable use
-#  of manim_pptx.PPTXScene or other slide show scene options. AND make it so the classes inherited from must have
-#  certain methods implemented, similar to ABC meta classes.
-
-# TODO (2023-03-12 @ 10:26:11): Another way to improve this is by having the first frame of a slide's animation as the
-#  background, then layer videos on top of one another, with their first frame set transparent via alpha channel, and
-#  the foreground would be the next slide's first frame that has an "appear" animation at the end of the slide.  That
-#  *should* allow us to put multiple animations with triggers on a single slide
+# TODONT (2023-03-01 @ 11:30:50): Figure out how to get "All" class to re-use video and image resources from other
+#  topics
+# TODO (2023-08-19 @ 12:19:10): Re-design how "All" works.  Instead of just making one big presentation, it should
+#  make the individual presentations, then combine them all together with sections
+#  MAYBE using "All" shouldn't be how this is done
 
 # TODO (2023-03-13 @ 16:29:59): Make other Topics within the same script "inherit" the previous Topic's "end state"
 #  (maybe check out "play_internal" for ideas how to do this)
 
-# TODO (2023-05-07 @ 09:06:32): ADD UNIT TESTS!!!!!
+# TODO (2023-06-15 @ 19:23:30): Look into using "play_internal" to prep skipped slides (and earlier topics)
+#  https://docs.manim.community/en/stable/reference/manim.scene.scene.Scene.html?highlight=remove#manim.scene.scene.Scene.play_internal
 
-# TODO (2023-05-09 @ 19:32:21): Automatically trim indent spaces in notes so we can use the triple quotes without
-#  un-indenting every line
-#   DONE (2023-05-23 @ 12:47:58): by PPTXScene.__process_notes__
+# TODO (2023-03-04 @ 10:47:11): Figure out how to enforce Topic to inherit from different classes, i.e. to enable use
+#  of manim_pptx.PPTXScene or other slide show scene options. AND make it so the classes inherited FROM must have
+#  certain methods implemented, similar to ABC meta classes.
+
+# TODO (2023-05-07 @ 09:06:32): ADD UNIT TESTS!!!!!
 
 # TODO (2023-05-12 @ 09:59:46): Create a pyi file for all classes and modules in this package
 
@@ -65,103 +60,11 @@ from .PPTXScene import PPTXScene
 # TODO (2023-05-24 @ 09:50:44): Change the creation of the slide show to insert the videos into the content section of
 #  a "content only" slide, that way the format/layout of the slides can be changed easily by editing the format/layout
 #  of a single master slide
-
-LiveTemplateInstructionsForSlide = r'''
-In order to get a live template for pycharm, go 
-to File -> Settings -> Editor -> Live Templates 
-and add a new template called "slide" with the 
-following code:
-
-@Slide
-def $NAME$(self):
-    # Animations and body go here
-    
-    self.wait(0.2)
-    self.endSlide(notes="""\
-""")
-    # Actions and cleanup that don't depend 
-    # on items for the next slide go here
-    pass
-
-Then change the "Applicable in" context to 
-Python: class
-'''
-
-LiveTemplateInstructionsForTopic = r'''
-In order to get a live template for pycharm, go 
-to File -> Settings -> Editor -> Live Templates 
-and add a new template called "topic" with the 
-following code:
-
-class T$N2$_$CLASS_NAME$(Topic):
-    _build_command_ = "manim -qm -p $FILE_NAME$ T$N2$_$CLASS_NAME$"
-
-    # noinspection PyAttributeOutsideInit
-    def setup(self):
-        # Title (replace if necessary)
-        self.title0 = Tex(r"\underline{$NAME$}", font_size=72)
-        self.title1 = self.title0.copy()
-        self.title1.font_size = 24
-        self.title1.move_to(3.8 * UP + 6.9 * LEFT, aligned_edge=UL)
-
-        # Other setup goes below
-        $END$
-        pass
-
-    @Slide
-    def Title(self):
-        self.play(Write(self.title0, run_time=2))
-        self.wait(0.5)
-        self.play(Indicate(self.title0))
-        self.play(TransformMatchingTex(self.title0, self.title1))
-        self.wait(0.2)
-        self.endSlide(notes="""\
-
-""")
-        pass
-        
-    @Slide
-    def $SLIDE1$(self):
-        # Animations and body go here
-        
-        self.wait(0.2)
-        self.endSlide(notes="""\
-
-""")
-        # Actions and cleanup that don't depend 
-        # on items for the next slide goes here
-        pass
-
-    @Slide
-    def Cleanup(self):
-        self.play(FadeOut(self.title1, ...))
-        # Put all persistent components in this ^ FadeOut function 
-        #  to clean them all up when the topic is finished.
-        self.wait(0.2)
-        self.endSlide(autonext=True)
-        pass
-
-    pass
-
-Then click "Edit Variables" and give a default 
-value of ["00"] to N2, ["TITLE"] to NAME, and 
-["SLIDE_NAME"] to SLIDE1. Next, give CLASS_NAME
-an expression of [capitalize(camelCase(NAME))]
-and FILE_NAME an expression of [fileName()] and
-turn on "Skip if defined" for CLASS_NAME and 
-FILE_NAME. 
-Then change the "Applicable in" context to 
-Python: Top-level
-'''
-
-# TODO (2023-06-13 @ 16:58:06): Move the above instructions to the Constants.py file
+#  UPDATE: this isn't exactly how pptx works, but there should still be a way we can do this
 
 # TODO (2023-06-15 @ 14:03:22): use the following method to clean up slide after Topic ends:
 #  https://github.com/Elteoremadebeethoven/AnimationsWithManim/blob/master/English/extra/faqs/faqs.md#remove-all-objects-in-screen
 #  e.g.: self.play(FadeOut(*self.mobjects))
-
-# TODO (2023-06-15 @ 19:23:30): Look into using "play_internal" to prep skipped slides (and earlier topics)
-#  https://docs.manim.community/en/stable/reference/manim.scene.scene.Scene.html?highlight=remove#manim.scene.scene.Scene.play_internal
 
 # URGENT: integrate "Sections" into the way we distinguish slides (and/or topics)
 #   https://docs.manim.community/en/stable/tutorials/output_and_config.html#sections
@@ -364,9 +267,10 @@ class Slide:
 
     def __setup__(self):
         # consts = self.code.co_consts
-        # # FIXME: this needs to be changed because if multiple values of the input are the same, they won't have separate
-        # #  entries in the co_consts tuple, i.e. self.endSlide(autonext=True, shownextnotes=True, notes="notes") will
-        # #  result in a co_consts tuple of (...,  True, "notes", ('autonext', 'shownextnotes', 'notes'), ...)
+        # # FIXME: this needs to be changed because if multiple values of the input are
+        # #  the same, they won't have separate entries in the co_consts tuple, i.e.
+        # #  self.endSlide(autonext=True, shownextnotes=True, notes="notes") will result in
+        # #  a co_consts tuple of (...,  True, "notes", ('autonext', 'shownextnotes', 'notes'), ...)
         # noteMapIndices = [(index, value) for index, value in enumerate(consts)
         #                   if isinstance(value, tuple) and 'notes' in value]
         #
@@ -591,301 +495,5 @@ class Slide:
     # def __set_name__(self, owner, name):
     #     print(owner, name)
     #     pass
-
-    pass
-
-
-if __name__ == '__main__0':
-    """Initial Testing of Principle"""
-
-
-    class Test(PPTXScene):
-        def testConstruct(self):
-            slides = filter(Slide.__instancecheck__, map(self.__getattribute__, self.__dir__()))
-            print(*[(slide.name, slide(self)) for slide in slides], sep='\n')
-            pass
-
-        pass
-
-
-    class subTest(Test):
-        @Slide
-        def slide1(self):
-            self.endSlide()
-            pass
-
-        def notASlide(self):
-            pass
-
-        @Slide
-        def slide3(self):
-            self.play(run_time=2)
-
-            self.endSlide()
-            pass
-
-        def alsoNotASlide(self):
-            pass
-
-        @Slide
-        def slide2(self):
-            pass
-
-        pass
-
-
-    pass
-pass
-if __name__ == '__main__1':
-    """Testing/Exploration of Code Objects to Pull Out 'endSlide' Command Usage"""
-
-
-    #
-    # class subTest(Topic):
-    #     @Slide
-    #     def slide1(self):
-    #         pass
-    #
-    #     @Slide
-    #     def slide2(self):
-    #         self.play(run_time=2)
-    #         pass
-    #
-    #     @Slide
-    #     def slide3(self):
-    #         self.endSlide()
-    #         pass
-    #
-    #     @Slide
-    #     def slide4(self):
-    #         self.play(run_time=2)
-    #
-    #         self.endSlide()
-    #         pass
-    #
-    #     @Slide
-    #     def slide5(self):
-    #         self.endSlide(notes="test")
-    #         pass
-    #
-    #     @Slide
-    #     def slide6(self):
-    #         self.play(run_time=2)
-    #
-    #         self.endSlide(notes="test")
-    #         pass
-    #
-    #     pass
-    #
-    #
-    # # slideCodes = list(filter(Slide.__instancecheck__, subTest.__dict__.values()))
-    # slideCodes = {key: value.code
-    #               for key, value in subTest.__dict__.items()
-    #               if isinstance(value, Slide)}
-    # print(*[f"{name}: {code.co_code}"
-    #         for name, code in slideCodes.items()], sep='\n')
-
-    class subTest(Topic):
-        @Slide
-        def slide0(self):
-            pass
-
-        @Slide
-        def slide1(self):
-            self.endSlide(notes="test")
-            pass
-
-        @Slide
-        def slide2(self):
-            self.play(run_time=2)
-
-            self.endSlide(notes="test")
-            pass
-
-        @Slide
-        def slide3(self):
-            self.play(run_time=2)
-
-            self.wait(loop=False)
-
-            # x = 2  # ; y = 3
-
-            # self.endSlide(
-            #     notes="test",
-            #     loop=False,
-            # )
-
-            # self.endSlide(
-            #     False,
-            #     False,
-            #     'test notes',
-            #     False
-            # )
-            # b'|\x00\xa0\x02d\x03d\x03d\x05d\x03\xa1\x04\x01\x00'  # 4 positional arguments
-            # b'|\x00\xa0\x02\xa1\x00\x01\x00'  # 0 positional arguments
-
-            self.endSlide(
-                False,
-                False,
-                shownextnotes=False,
-                notes='test notes',
-            )
-
-            # y = 3
-            # return y + x
-
-        pass
-
-
-    # slideCodes = list(filter(Slide.__instancecheck__, subTest.__dict__.values()))
-    slideCodes = {key: value.code
-                  for key, value in subTest.__dict__.items()
-                  if isinstance(value, Slide)}
-    print(*[f"{name}: {code.co_code}"
-            for name, code in slideCodes.items()], sep='\n')
-    # slideCodes['slide3'].co_code.split(b'\x00')
-    # [chr(x) for x in slideCodes['slide3'].co_code]
-    pass
-
-    re.split(b'(?<![A-Za-z])\x00', slideCodes['slide3'].co_code)
-    # ^ This line should split the code into its different components
-
-    # It looks like the code doesn't particularly have a way of distinguishing between components, one just follows
-    # after the other, what I have done in the previous line is take into account the 'self' is referenced by the code
-    # b'|\x00j' since 'self' is located at the zero index of co_varnames
-    # Therefore, we should be able to find start of the code for self.endSlide(...) by letting i1 be the index of 'self'
-    # in co_varnames and i2 be the index of 'endSlide' in co_names, then the start of the desired code is
-    # b'|\x{i1}j\x{i2}d'
-    # However, b'|\x{i1}\xa0\x{i2}\xa1\x00\x01\x00' represents self.endSlide()
-
-    # Now, let j1, j2, ..., jk be the indices of the keyword argument values in the co_consts tuple, let j0 be the index
-    # of the keyword argument names tuple within the co_consts tuple, and let n be the number of keyword arguments, then
-    # it looks like for self.endSlide(...) with named arguments gives us:
-    # b'|\x{i1}' + b'j\x{i2}' + b'd\x{j1}'    + b'd\x{j2}'    + ... + b'd\x{jk}'    + b'd\x{j0}'  + b'\x8d\x{n}\x01\x00'
-    # ^self        ^endSlide    ^kwarg value 1  ^kwarg value 2        ^kwarg value k  ^kwarg names  ^n kwargs and end
-
-    # i1 = subTest.slide3.code.co_varnames.index('self')
-    # i2 = subTest.slide3.code.co_names.index('endSlide')
-    # kwEndSlideStart = f"|{chr(i1)}j{chr(i2)}".encode()
-    # endSlideEnd = b'\x01\x00'
-    # codeStartIndex = subTest.slide3.code.co_code.index(kwEndSlideStart)
-    # codeEndIndex = subTest.slide3.code.co_code[codeStartIndex:].index(endSlideEnd) + codeStartIndex
-    # endSlideCode = subTest.slide3.code.co_code[codeStartIndex + len(kwEndSlideStart):codeEndIndex]
-    pass
-pass
-if __name__ == '__main__2':
-    """Testing of __new__ vs __init__ args and order"""
-
-
-    class testClass:
-
-        def __new__(cls, *args, **kwargs):
-            print("In new")
-            print(args)
-            print(kwargs)
-            self = object.__new__(cls)
-            return self
-
-        def __init__(self, *args, **kwargs):
-            print("In init")
-            print(args)
-            print(kwargs)
-            pass
-
-        pass
-
-
-    t = testClass('a', 'b', 3, x=2, y=int)
-    pass
-pass
-if __name__ == '__main__3':
-    """Subclass method override test."""
-
-
-    class TestClass:
-
-        def fun1(self):
-            print(f'in fun1 of {self}')
-            pass
-
-        def fun2(self):
-            print(f'in fun2 of {self}')
-            pass
-
-        def __init_subclass__(cls, **kwargs):
-            super(TestClass, cls).__init_subclass__(**kwargs)
-            cls.fun1 = TestClass.fun2
-            pass
-
-        pass
-
-
-    class TestSubClass(TestClass):
-        pass
-
-
-    a = TestClass()
-    b = TestSubClass()
-
-    a.fun1()
-    a.fun2()
-
-    b.fun1()
-    b.fun2()
-
-    pass
-pass
-if __name__ == '__main__':
-    """Testing of "all" setup with Topic"""
-
-
-    class subTest(Topic):
-        @Slide
-        def slide0(self):
-            pass
-
-        @Slide
-        def slide1(self):
-            self.endSlide(notes="test")
-            pass
-
-        @Slide
-        def slide2(self):
-            self.play(run_time=2)
-
-            self.endSlide(notes="test")
-            pass
-
-        pass
-
-
-    a = subTest()
-    assert list(a.__get_slides__()) == list(a.__get_instance_slides__())
-
-
-    class All(Topic):
-        # @Slide
-        # def slide01(self):
-        #     # Animations and body go here
-        #
-        #     self.wait(0.2)
-        #     self.endSlide(notes="""\
-        # """)
-        #     # Actions and cleanup that don't depend
-        #     # on items for the next slide goes here
-        #     pass
-        #
-        # # noinspection PyAttributeOutsideInit
-        # @slide01.setup
-        # def slide01(self, slide: Slide, on=True, *args, **kwargs):
-        #     # Setup for this slide goes here.
-        #
-        #     # Use slide.off() to turn off this slide
-        #     if not on:
-        #         slide.off()
-        #         pass
-        #     pass
-        pass
-
 
     pass

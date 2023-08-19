@@ -77,8 +77,9 @@ etreeElementClass = etree._Element
 #  so they are triggered by advancing to the slide.
 ...
 # TODO (2023-05-07 @ 09:55:34): Add the slide name to each slide as a "Title" by creating a new master slide format
-#  with the title outside of the viewing area (probably on above so the change in size doesn't move the title into the
+#  with the title outside of the viewing area (probably above so the change in size doesn't move the title into the
 #  viewing area).  Then add the slide name as text to the title text box.
+#  Alternatively, make the title transparent (and in background)
 ...
 
 url_schema = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
@@ -129,6 +130,11 @@ class PPTXScene(manim.ThreeDScene):
 
     @staticmethod
     def __process_notes__(notes: str):
+        """
+        Automatically trim indent spaces in notes.
+
+        Because of this, we can use triple quotes to generate notes without un-indenting every line.
+        """
         return line_start_pattern.sub('', not_preceded_pattern.sub(' ', notes.strip()))
 
     def all_endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
@@ -638,7 +644,7 @@ class PPTXScene(manim.ThreeDScene):
     # static methods for controlling slide animations, transitions, and other components.
     #   see https://python-pptx.readthedocs.io/en/latest/dev/analysis/shp-movie.html for more information
 
-    # TODO (2023-03-06 @ 10:30:19): Convert these to a class of their own (this should make it more OOP)
+    # TODO (2023-03-06 @ 10:30:19): Convert these to a class of their own (this should make it more object oriented)
 
     @staticmethod
     def addAutoNext(slide: pptx.slide.Slide):
@@ -951,41 +957,4 @@ if __name__ == '__main__':
         pass
 
     prs_t.save(os.path.join(output_folder_t, 'test.pptx'))
-    pass
-
-if __name__ == '__main__':
-    if __name__ == '__main__':
-        if __name__ == '__main__':
-            test_string = """\
-            Here is a test\
-            of a line not ended.
-
-            Here is a continued line.  Here is a new sentence.
-
-            Here is a line not ended.\
-            Here is a new sentence.
-            """
-            import re
-
-            # sentence_end = re.compile(r'\. {2,}')
-            # larger_space = re.compile(r' {2,}')
-            # not_preceded = re.compile(r'(?<![.!? ]) {2,}', re.M)
-            not_preceded = re.compile(r'(?<![.!?]) {2,}', re.M)
-            line_start = re.compile(r'^ ', re.M)
-            line_start.sub('', not_preceded.sub(' ', test_string))
-            pass
-
-        test_res = [re.compile(r'\u00a0'),
-                    re.compile(r'\u1680'),
-                    re.compile(r'[\u2000-\u200a]'),
-                    re.compile(r'\u2028'),
-                    re.compile(r'\u2029'),
-                    re.compile(r'\u202f'),
-                    re.compile(r'\u205f'),
-                    re.compile(r'\u3000'),
-                    re.compile(r'\ufeff'),
-                    re.compile(r' ')]
-        accepted = [r for r in test_res
-                    if r.match(' ')]
-        pass
     pass
