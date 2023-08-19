@@ -201,6 +201,8 @@ class PPTXScene(manim.ThreeDScene):
         """Combine all animations for the slide into a single video."""
         slide_movie_files = self.renderer.file_writer.partial_movie_files[start_index:end_index]
         first_movie_file = slide_movie_files[0]
+        last_movie_file = slide_movie_files[-1]  # Use this to make slides show their destination instead of start
+
         # TODO (2023-03-05 @ 11:40:39): hash combined video (just hash combination of the contributing video hashes)
         #  so it can be reused (although this barely takes any time once the component videos are made, so maybe
         #  don't bother)
@@ -228,6 +230,7 @@ class PPTXScene(manim.ThreeDScene):
             f"slide_{slide_number}_thumbnail.png"
         )
         self.save_video_thumb(first_movie_file, thumbnail_file)
+        # self.save_video_thumb(last_movie_file, thumbnail_file)
 
         return_data = {
             'slide_movie_file': slide_movie_file,
@@ -553,10 +556,11 @@ class PPTXScene(manim.ThreeDScene):
                 logger.log(PPTX_INFO, f'Removed previously existing PowerPoint file.')
                 pass
             except PermissionError as e:
-                e.strerror = f'Currently existing PowerPoint file is protected from modification by manim; the ' \
-                             f'resulting presentation is not be able to be saved with the name {presentation_name}' \
+                e.strerror = f'Currently existing PowerPoint file is protected, by the system, from ' \
+                             f'modification by manim; the ' \
+                             f'resulting presentation is not be able to be saved with the name "{presentation_name}"' \
                              f'.  Please manually rename or delete the existing file, then try again.' \
-                             f'\n\tFile location:'
+                             f'\n\tFile location'
                 raise
             pass
 

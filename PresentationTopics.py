@@ -19,11 +19,6 @@ if __name__ == '__main__':
 from .PresentationLogger import logger, TOPIC_INFO, TOPIC_DEBUG, TOPIC_WARNING
 from .PPTXScene import PPTXScene
 
-# TODO: IMPORTANT: It might be possible to improve the conversion to power point by converting the videos for a single
-#  slide into one single video, then putting that video into power point as a single playthrough (or something to that 
-#  effect).  Alternatively, it might be better to change the self.wait command to not affect the videos, but instead 
-#  either pause playback (preferred if possible) or split the videos and add a pause to the slide via animations.
-
 # TODO: add documentation to Topic object that automatically prints either instructions for operation, OR points to
 #  the manim instructions for operation, e.g. manim -qm -p Presentation.py T01_...
 #  MAYBE add these instructions as a comment in the live templates.
@@ -161,17 +156,31 @@ Python: Top-level
 
 # TODO (2023-06-13 @ 16:58:06): Move the above instructions to the Constants.py file
 
+# TODO (2023-06-15 @ 14:03:22): use the following method to clean up slide after Topic ends:
+#  https://github.com/Elteoremadebeethoven/AnimationsWithManim/blob/master/English/extra/faqs/faqs.md#remove-all-objects-in-screen
+#  e.g.: self.play(FadeOut(*self.mobjects))
+
+# TODO (2023-06-15 @ 19:23:30): Look into using "play_internal" to prep skipped slides (and earlier topics)
+#  https://docs.manim.community/en/stable/reference/manim.scene.scene.Scene.html?highlight=remove#manim.scene.scene.Scene.play_internal
+
+# URGENT: integrate "Sections" into the way we distinguish slides (and/or topics)
+#   https://docs.manim.community/en/stable/tutorials/output_and_config.html#sections
+
+# TODO (2023-07-20 @ 12:07:24): Go to "image_test.py" file for example of how to get images from a scene
+
 
 class Topic(PPTXScene):
     """All slides should be divided, in order, into methods that implement the @Slide decorator class.
     Each slide must end with a self.endSlide(...) command.
     Each slide must have a unique name, and names should be relevant to the content covered.
     Components for use in the slides should be defined in a 'setup' function OR on a per-slide basis using the
-        @<slide>.setup decorator
+        @<slide name>.setup decorator
 
     This is also extensible to other formats of slide show creation using Manim if/when we want to switch over to
-    something that doesn't use power point since we've been having so many issues with it (or, when we get overly
-    ambitious and want to make our own version *sigh*)"""
+    something that doesn't use power point since it can cause a lot of issues.
+    The main reason behind using power point and MS teams is that when we present live with teams, it downloads a
+    local copy of the presentation, so the presentation doesn't eat up bandwidth, but all of the animations come
+    through smooth and in full definition."""
 
     _wait_override_ = None
 
@@ -330,6 +339,7 @@ class Slide:
     setupFunction: typing.Optional[types.FunctionType]
     notes: typing.Optional[str]
     code: types.CodeType
+    __parent_slide__: "Slide"
 
     # TODO: figure out how to enforce functions decorated with @NAME.setup to have signature of (self, owner)
     #  -> I think this is going to be done in the inspections or inspections settings (or possibly with a pyi stub)
@@ -372,6 +382,7 @@ class Slide:
 
     def __processEndSlide__(self):
         if 'endSlide' in self.code.co_names:
+            # TODO (2023-08-19 @ 12:11:28): This might be more trouble than it's worth
             i1 = self.code.co_varnames.index('self')
             i2 = self.code.co_names.index('endSlide')
             kwEndSlideStart = f"|{chr(i1)}j{chr(i2)}".encode()  # keyword and positional argument call
@@ -430,6 +441,7 @@ class Slide:
                 #                  f"names:\n\t{self.code.co_names}\n"
                 #                  f"varnames:\n\t{self.code.co_varnames}")
                 warnings.warn("Can't find endSlide error, needs to be fixed.")
+                "It seems like this comes from using ValueTrackers or updaters of some sort. OR lambda functions"
                 return
             # print(self.name, ':', inputDict)
 
@@ -501,12 +513,33 @@ class Slide:
                 setup_defaults.update(self.setupFunction.__kwdefaults__)
                 pass
             pass
+        elif self.is_child:
+            setup_defaults.update(self.__parent_slide__.setup_defaults)
+            pass
         return setup_defaults
 
     def setup(self, setupFunction: types.FunctionType) -> "Slide":
-        """ Descriptor to change the setup function for the slide. """
+        """ Descriptor to change/set the setup function for the slide. """
+        assert not self.is_child
         self.setupFunction = setupFunction
         return self
+
+    def child(self, constructFunction: types.FunctionType) -> "Slide":
+        """
+        Decorator to set a new child slide.
+
+        Define an additional slide which relies of the same setup as this slide,
+        which should come after this slide or after other child slides of this
+        slide.
+        """
+        # TODO (2023-06-13 @ 17:44:15): (low priority) make a postfix completion template for this
+        child_slide = Slide(constructFunction)
+        child_slide.__parent_slide__ = self
+        return child_slide
+
+    @property
+    def is_child(self):
+        return hasattr(self, "__parent_slide__")
 
     def constructProtocol(self, owner, *args, **kwargs):
         if self.__on__:
@@ -521,7 +554,11 @@ class Slide:
     def setupProtocol(self, owner, *args, **kwargs):
         t_start = time.perf_counter()
         self.__coreSetup__(owner, *args, **kwargs)
-        if self.setupFunction is not None:
+        if self.is_child:
+            logger.log(TOPIC_INFO, f'Setup for child slide "{self.name}" inherits from parent slide.')
+            result = None
+            pass
+        elif self.setupFunction is not None:
             logger.log(TOPIC_INFO, f'Executing slide "{self.name}" setup.')
             result = self.setupFunction(owner, self, *args, **kwargs)
             pass
@@ -539,6 +576,8 @@ class Slide:
         #  for the setup of the slide being created, because in the latter case, then dependence doesn't really matter
         #  because all aspects of the setup are required and therefore in this case, this warning shouldn't be raised.
         if dt > 1 and not self.setup_defaults.get('skip_dependence', False):
+            # TODO (2023-06-18 @ 15:17:16): owner.__presentation_name__ is not correct because it will always be
+            #  the Topic doing the setup, not the actual owner of the slide.
             logger.log(TOPIC_WARNING, f'The setup for Slide decorated function {self.name} in '
                                       f'{owner.__presentation_name__} is computationally expensive.  If there are no '
                                       f'dependencies in this setup function for slides in other Topics, then consider '
@@ -796,7 +835,7 @@ if __name__ == '__main__3':
 
     pass
 pass
-if __name__ == '__main__4':
+if __name__ == '__main__':
     """Testing of "all" setup with Topic"""
 
 
