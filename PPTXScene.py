@@ -81,9 +81,15 @@ etreeElementClass = etree._Element
 #  viewing area).  Then add the slide name as text to the title text box.
 #  Alternatively, make the title transparent (and in background)
 ...
+# TODO (2023-08-21 @ 06:06:31): PPTXScene should be able to inherit from different "Scene" classes, the
+#  "manim.MovingCameraScene" class for example, so it can be used with the functionality thereof
+#  Note, however, there may be certain caveats and pitfalls for some scene classes, like we saw with
+#  "manim_physics.SpaceScene" BUT there may be a way to address these with the base PPTXScene class
 
 url_schema = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 
+# This is regex for determining when to condense two or more spaces into one
+# (i.e. whenever the spaces are not preceded by a punctuation)
 not_preceded_pattern = re.compile(r'(?<![.!?]) {2,}', re.M)
 line_start_pattern = re.compile(r'^ ', re.M)
 
@@ -135,7 +141,18 @@ class PPTXScene(manim.ThreeDScene):
 
         Because of this, we can use triple quotes to generate notes without un-indenting every line.
         """
-        return line_start_pattern.sub('', not_preceded_pattern.sub(' ', notes.strip()))
+        # Strip any leading and trailing whitespace from notes string
+        notes = notes.strip()
+        # Replace all occurrences of two or more spaces with a single space
+        #   EXCEPT when preceded by a punctuation mark
+        notes = not_preceded_pattern.sub(' ', notes)
+        # Remove leading white space from new lines.
+        #   (Here we match with just a single space because we reduced all
+        #   multiple space substrings to single spaces in the previous step)
+        notes = line_start_pattern.sub('', notes)
+        # This is equivalent to:
+        #   return line_start_pattern.sub('', not_preceded_pattern.sub(' ', notes.strip()))
+        return notes
 
     def all_endSlide(self, loop=False, autonext=False, notes=None, shownextnotes=False):
         warnings.warn("The 'all_endSlide' method is deprecated, "
@@ -890,8 +907,8 @@ if __name__ == '__main__':
     # open/load in template presentation
     prs_t = pptx.Presentation(pptx=os.path.join(os.path.split(__file__)[0], "template.pptx"))
     blank_slide_layout_t = prs_t.slide_layouts[6]
-    source_folder_t = "C:\\Users\\james\\AppData\\Local\\Programs\\Python\\Python38\\Lib\\site-packages" \
-                      "\\presentations\\TestPartialVideos\\"
+    local_root = os.getcwd()
+    source_folder_t = os.path.join(local_root, "TestPartialVideos", "")
     slide_movie_files_t = [
         "274514146_2271961971_223132457.mp4",
         "207390714_4070753449_2157517633.mp4",
@@ -900,10 +917,8 @@ if __name__ == '__main__':
     ]
     slide_movie_files_t = list(map(source_folder_t.__add__, slide_movie_files_t))
     notes_t = "These are test notes."
-    temporary_dir_t = "C:\\Users\\james\\AppData\\Local\\Programs\\Python\\Python38\\Lib\\site-packages" \
-                      "\\presentations\\TestTempDir\\"
-    output_folder_t = "C:\\Users\\james\\AppData\\Local\\Programs\\Python\\Python38\\Lib\\site-packages" \
-                      "\\presentations\\TestOutput\\"
+    temporary_dir_t = os.path.join(local_root, "TestTempDir", "")
+    output_folder_t = os.path.join(local_root, "TestOutput", "")
     if not os.path.exists(output_folder_t):
         os.mkdir(output_folder_t)
         pass

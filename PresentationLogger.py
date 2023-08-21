@@ -2,6 +2,9 @@ import logging
 import sys
 import warnings
 
+# TODO (2023-08-19 @ 13:51:40): properly implement __all__
+# __all__ = []
+
 # See:
 # https://docs.python.org/3.8/library/logging.html
 
@@ -17,6 +20,7 @@ PPTX_DEBUG = 11
 logging.addLevelName(PPTX_DEBUG, 'PPTX_DBG')
 PPTX_WARNING = 28
 logging.addLevelName(PPTX_WARNING, 'PPTX_WRN')
+
 use_manim_logger = True
 
 if use_manim_logger:
@@ -36,7 +40,8 @@ else:
     handler.setFormatter(fmt)
     logger.addHandler(handler)
     pass
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 
 # # Make sure warnings are captured by logger
 # logging.captureWarnings(True)
